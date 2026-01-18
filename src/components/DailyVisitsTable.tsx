@@ -108,36 +108,62 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
         `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
+      
+      if (!response.ok) {
+        console.warn('Could not fetch users');
+        setUsers([]);
+        return;
+      }
+      
       const data = await response.json();
       if (data.success) {
         setUsers(data.users);
       }
     } catch (error) {
       console.error('Error loading users:', error);
+      setUsers([]);
     }
   };
 
   const loadVisits = async () => {
     setLoading(true);
     try {
+      // Check if Supabase is configured
+      if (!projectId || !publicAnonKey) {
+        console.warn('Supabase not configured');
+        setVisits([]);
+        setLoading(false);
+        return;
+      }
+
       // Fetch all visits
       const visitsResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/visits`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-      const visitsData = await visitsResponse.json();
+      ).catch(err => {
+        console.warn('Failed to fetch visits:', err);
+        return { ok: false, json: async () => ({ success: false, visits: [] }) };
+      });
+      
+      const visitsData = await visitsResponse.json().catch(() => ({ success: false, visits: [] }));
       
       if (!visitsData.success) {
-        throw new Error('Failed to load visits');
+        setVisits([]);
+        setLoading(false);
+        return;
       }
 
       // Fetch all clients
       const clientsResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-      const clientsData = await clientsResponse.json();
-      const clientsMap = new Map(clientsData.clients.map((c: any) => [c.id, c]));
+      ).catch(err => {
+        console.warn('Failed to fetch clients:', err);
+        return { ok: false, json: async () => ({ success: false, clients: [] }) };
+      });
+      
+      const clientsData = await clientsResponse.json().catch(() => ({ success: false, clients: [] }));
+      const clientsMap = new Map((clientsData.clients || []).map((c: any) => [c.id, c]));
 
       // Filter visits by date and location
       let filteredVisits = visitsData.visits.filter((visit: any) => {

@@ -204,16 +204,30 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
               <tr>
                 <th>Date</th>
                 <th>Client ID</th>
-                <th>Service</th>
-                <th>Location</th>
+                ${selectedProgram === 'condom' ? `
+                  <th>Location</th>
+                  <th>Male</th>
+                  <th>Female</th>
+                  <th>Lubricants</th>
+                ` : `
+                  <th>Service</th>
+                  <th>Location</th>
+                `}
                 <th>Staff</th>
               </tr>
               ${reportData.records.slice(0, 50).map((record: any) => `
                 <tr>
                   <td>${new Date(record.date || record.createdAt).toLocaleDateString()}</td>
                   <td>${record.clientId || 'N/A'}</td>
-                  <td>${record.service || selectedProgram.toUpperCase()}</td>
-                  <td>${record.location || location}</td>
+                  ${selectedProgram === 'condom' ? `
+                    <td>${record.location || location}</td>
+                    <td>${record.maleCondoms || 0}</td>
+                    <td>${record.femaleCondoms || 0}</td>
+                    <td>${record.lubricant || 0}</td>
+                  ` : `
+                    <td>${record.service || selectedProgram.toUpperCase()}</td>
+                    <td>${record.location || location}</td>
+                  `}
                   <td>${record.staff || record.createdBy || 'N/A'}</td>
                 </tr>
               `).join('')}
@@ -296,10 +310,17 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
 
       if (reportData.records && reportData.records.length > 0) {
         csvContent += `Detailed Records\n`;
-        csvContent += `Date,Client ID,Service,Location,Staff\n`;
-        reportData.records.forEach((record: any) => {
-          csvContent += `${new Date(record.date || record.createdAt).toLocaleDateString()},${record.clientId || 'N/A'},${record.service || selectedProgram.toUpperCase()},${record.location || location},${record.staff || record.createdBy || 'N/A'}\n`;
-        });
+        if (selectedProgram === 'condom') {
+          csvContent += `Date,Client ID,Location,Male Condoms,Female Condoms,Lubricants,Staff\n`;
+          reportData.records.forEach((record: any) => {
+            csvContent += `${new Date(record.date || record.createdAt).toLocaleDateString()},${record.clientId || 'N/A'},${record.location || location},${record.maleCondoms || 0},${record.femaleCondoms || 0},${record.lubricant || 0},${record.staff || record.createdBy || 'N/A'}\n`;
+          });
+        } else {
+          csvContent += `Date,Client ID,Service,Location,Staff\n`;
+          reportData.records.forEach((record: any) => {
+            csvContent += `${new Date(record.date || record.createdAt).toLocaleDateString()},${record.clientId || 'N/A'},${record.service || selectedProgram.toUpperCase()},${record.location || location},${record.staff || record.createdBy || 'N/A'}\n`;
+          });
+        }
       }
 
       // Create blob and download
@@ -606,22 +627,52 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
                   <div className="overflow-x-auto max-h-96">
                     <table className="w-full">
                       <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs">Date</th>
-                          <th className="px-4 py-3 text-left text-xs">Client ID</th>
-                          <th className="px-4 py-3 text-left text-xs">Service</th>
-                          <th className="px-4 py-3 text-left text-xs">Location</th>
-                          <th className="px-4 py-3 text-left text-xs">Staff</th>
-                        </tr>
+                        {selectedProgram === 'condom' ? (
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Male Condoms</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Female Condoms</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lubricants</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff</th>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client ID</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff</th>
+                          </tr>
+                        )}
                       </thead>
-                      <tbody className="divide-y">
+                      <tbody className="bg-white divide-y divide-gray-200">
                         {reportData.records.map((record: any, idx: number) => (
                           <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm">{new Date(record.date).toLocaleDateString()}</td>
-                            <td className="px-4 py-3 text-sm">{record.clientId}</td>
-                            <td className="px-4 py-3 text-sm">{record.service}</td>
-                            <td className="px-4 py-3 text-sm">{record.location}</td>
-                            <td className="px-4 py-3 text-sm">{record.staff}</td>
+                            {selectedProgram === 'condom' ? (
+                              <>
+                                <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                                  {new Date(record.date || record.createdAt).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.clientId || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.location || location}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.maleCondoms || 0}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.femaleCondoms || 0}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.lubricant || 0}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.staff || record.createdBy || 'N/A'}</td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                                  {new Date(record.date || record.createdAt).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.clientId || 'N/A'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.service || selectedProgram.toUpperCase()}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.location || location}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{record.staff || record.createdBy || 'N/A'}</td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>

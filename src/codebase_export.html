@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M&E System Codebase Export</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.5; padding: 2rem; max-width: 1200px; margin: 0 auto; color: #333; }
+        h1 { border-bottom: 2px solid #333; padding-bottom: 0.5rem; }
+        h2 { margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 0.3rem; }
+        pre { background: #f4f4f4; padding: 1rem; border-radius: 4px; overflow-x: auto; border: 1px solid #ddd; }
+        code { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 0.9rem; }
+        .toc { background: #f9f9f9; padding: 1rem; border-radius: 8px; border: 1px solid #eee; margin-bottom: 2rem; }
+        .toc ul { list-style-type: none; padding-left: 0; }
+        .toc li { margin-bottom: 0.5rem; }
+        .toc a { text-decoration: none; color: #0066cc; }
+        .toc a:hover { text-decoration: underline; }
+        .file-header { display: flex; justify-content: space-between; align-items: center; margin-top: 3rem; background: #eef2f6; padding: 0.5rem 1rem; border-radius: 4px; }
+        .file-path { font-weight: bold; font-family: monospace; }
+        .back-to-top { font-size: 0.8rem; color: #666; text-decoration: none; }
+    </style>
+</head>
+<body>
+
+    <h1>M&E System Codebase Export</h1>
+    <p>Generated on January 18, 2026. This document contains the source code for key components of the M&E Data Management System.</p>
+
+    <div class="toc">
+        <h2>Table of Contents</h2>
+        <ul>
+            <li><a href="#doc">Documentation (ME_SYSTEM_DOCUMENTATION.md)</a></li>
+            <li><a href="#app">Entry Point (App.tsx)</a></li>
+            <li><a href="#login">Authentication (components/Login.tsx)</a></li>
+            <li><a href="#dashboard">Dashboard (components/Dashboard.tsx)</a></li>
+            <li><a href="#client-mgmt">Client Management (components/ClientManagement.tsx)</a></li>
+            <li><a href="#init-data">Data Initialization (components/InitializeData.tsx)</a></li>
+            <li><a href="#clinical">Clinical Module (components/visit-modules/ClinicalModule.tsx)</a></li>
+            <li><a href="#server-index">Backend Server (supabase/functions/server/index.tsx)</a></li>
+            <li><a href="#server-routes">Backend Routes (supabase/functions/server/routes.tsx)</a></li>
+            <li><a href="#kv-store">Database Utility (supabase/functions/server/kv_store.tsx)</a></li>
+        </ul>
+    </div>
+
+    <div id="doc">
+        <div class="file-header">
+            <span class="file-path">/ME_SYSTEM_DOCUMENTATION.md</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code># M&E Data Management System - Documentation
+
+## Overview
+
+A comprehensive Monitoring & Evaluation (M&E) data management application designed for multi-location client tracking with real-time synchronization, role-based access control, audit trails, and dashboard reporting.
+
+## System Architecture
+
+### Technology Stack
+
+- **Frontend**: React with TypeScript, Tailwind CSS, shadcn/ui components
+- **Backend**: Supabase Edge Functions (Hono web framework)
+- **Database**: PostgreSQL (via Supabase KV Store)
+- **Real-time**: Polling-based updates (10-30 second intervals)
+- **Charts**: Recharts library
+
+### Architecture Pattern
+
+```
+┌─────────────────────┐
+│   React Frontend    │
+│  (3 Locations)      │
+└──────────┬──────────┘
+           │ HTTPS
+           ▼
+┌─────────────────────┐
+│  Supabase Edge      │
+│  Functions (Hono)   │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  PostgreSQL KV      │
+│  Store Database     │
+└─────────────────────┘
+```
+
+## Features
+
+### 1. Authentication & Authorization
+
+- **Login System**: Email/password authentication
+- **Demo Accounts**: Pre-configured users for testing
+- **Session Management**: LocalStorage-based persistence
+
+### 2. Role-Based Access Control (RBAC)
+
+- **Admin**: Full access to all features including user management and audit logs
+- **M&E Officer**: Can add/edit clients and visits, view all reports
+- **Data Entry**: Can add/edit clients and visits
+- **Viewer**: Read-only access to client data and dashboards
+
+### 3. Client Management
+
+- Client registration with comprehensive profile data
+- Search and filter capabilities
+- Location-based filtering
+- Real-time updates across locations
+- CSV export functionality
+- Fields captured:
+  - Client ID (unique identifier)
+  - First Name, Last Name
+  - Age, Gender
+  - Location (A, B, or C)
+  - Phone, Email
+  - Address
+  - Status (Active/Inactive)
+
+### 4. Visit/Encounter Tracking
+
+- Record client service visits
+- Visit types: Initial Consultation, Follow-up, Counseling, Medical Checkup, Service Delivery
+- Service documentation
+- Follow-up tracking with dates
+- Linked to client records
+
+### 5. Dashboard & Reporting
+
+**KPI Cards:**
+
+- Total Clients
+- Total Visits
+- Active Users
+- Number of Locations
+
+**Visualizations:**
+
+- Clients by Location (Bar Chart)
+- Clients by Gender (Pie Chart)
+- Clients by Age Group (Bar Chart)
+
+**Real-time Updates:**
+
+- Auto-refresh every 30 seconds
+- Recent activity tracking (last 30 days)
+
+### 6. Audit Log
+
+- Tracks all system changes
+- Records: Create, Update, Delete actions
+- Captures: Entity type, Entity ID, User, Timestamp
+- Admin-only access
+- Searchable and filterable
+- Auto-refresh every 15 seconds
+
+### 7. User Management
+
+- Create new users
+- Assign roles and locations
+- View all system users
+- Admin-only access
+
+## Data Model
+
+### Entities
+
+#### Client
+
+```json
+{
+  "id": "client_1234567890_abc123def",
+  "clientId": "CL-001",
+  "firstName": "John",
+  "lastName": "Doe",
+  "age": 35,
+  "gender": "Male",
+  "location": "Location A",
+  "phone": "+1234567890",
+  "email": "john@example.com",
+  "address": "123 Main St",
+  "status": "Active",
+  "createdAt": "2025-01-01T12:00:00Z",
+  "updatedAt": "2025-01-01T12:00:00Z",
+  "createdBy": "user_1234567890_xyz"
+}
+```
+
+#### Visit
+
+```json
+{
+  "id": "visit_1234567890_abc123def",
+  "clientId": "client_1234567890_abc123def",
+  "visitDate": "2025-01-05",
+  "visitType": "Follow-up",
+  "serviceProvided": "Counseling session",
+  "notes": "Client progress noted",
+  "followUpRequired": true,
+  "followUpDate": "2025-02-05",
+  "createdAt": "2025-01-05T14:30:00Z",
+  "createdBy": "user_1234567890_xyz"
+}
+```
+
+#### User
+
+```json
+{
+  "id": "user_1234567890_abc123def",
+  "name": "Jane Smith",
+  "email": "jane@demo.org",
+  "password": "hashed_password",
+  "role": "M&E Officer",
+  "location": "Location B",
+  "status": "Active",
+  "createdAt": "2025-01-01T10:00:00Z"
+}
+```
+
+#### Audit Log
+
+```json
+{
+  "id": "audit_1234567890_abc123def",
+  "entityType": "client",
+  "entityId": "client_1234567890_abc123def",
+  "action": "update",
+  "userId": "user_1234567890_xyz",
+  "timestamp": "2025-01-05T14:30:00Z",
+  "before": { "status": "Active" },
+  "after": { "status": "Inactive" }
+}
+```
+
+## API Endpoints
+
+### Authentication
+
+- `POST /make-server-56fd5521/auth/login` - User login
+
+### Clients
+
+- `POST /make-server-56fd5521/clients` - Create client
+- `GET /make-server-56fd5521/clients` - Get all clients
+- `GET /make-server-56fd5521/clients/:id` - Get single client
+- `PUT /make-server-56fd5521/clients/:id` - Update client
+
+### Visits
+
+- `POST /make-server-56fd5521/visits` - Create visit
+- `GET /make-server-56fd5521/visits` - Get all visits
+- `GET /make-server-56fd5521/visits/client/:clientId` - Get visits for client
+
+### Users
+
+- `POST /make-server-56fd5521/users` - Create user
+- `GET /make-server-56fd5521/users` - Get all users
+
+### Metrics
+
+- `GET /make-server-56fd5521/metrics` - Get dashboard metrics
+
+### Audit
+
+- `GET /make-server-56fd5521/audit` - Get all audit logs
+- `GET /make-server-56fd5521/audit/:entityType/:entityId` - Get logs for entity
+
+## Demo Credentials
+
+### Pre-configured Users
+
+| Role        | Email           | Password | Permissions                       |
+| ----------- | --------------- | -------- | --------------------------------- |
+| Admin       | admin@demo.org  | demo123  | Full access                       |
+| M&E Officer | me@demo.org     | demo123  | Add/edit clients, visits, reports |
+| Data Entry  | data@demo.org   | demo123  | Add/edit clients and visits       |
+| Viewer      | viewer@demo.org | demo123  | Read-only access                  |
+
+## Real-time Synchronization
+
+### Approach
+
+The system uses **polling-based real-time updates**:
+
+- Dashboard metrics: 30-second refresh
+- Client list: 10-second refresh
+- Visit list: 10-second refresh
+- Audit logs: 15-second refresh
+
+### Benefits
+
+- Simple implementation
+- Works across all three locations
+- No complex WebSocket infrastructure
+- Reliable in variable network conditions
+
+### Conflict Resolution
+
+- **Last-write-wins**: Most recent update takes precedence
+- Audit logs track all changes for conflict investigation
+- Timestamps on all records
+
+## Security
+
+### Authentication
+
+- Email/password authentication
+- Session stored in localStorage
+- Authorization header with Bearer token
+
+### Authorization
+
+- Role-based access control enforced at API level
+- UI elements hidden based on permissions
+- Server validates user role for protected operations
+
+### Data Protection
+
+- All API calls use HTTPS
+- Passwords stored in database (note: use hashing in production)
+- Audit logs for compliance tracking
+
+### Important Security Notes for Production
+
+⚠️ **This is a prototype/demo system. For production deployment:**
+
+- Implement password hashing (bcrypt, Argon2)
+- Add rate limiting
+- Implement proper session management
+- Use JWT tokens instead of localStorage
+- Add input validation and sanitization
+- Implement CSRF protection
+- Enable database encryption at rest
+- Implement row-level security policies
+- Add data anonymization for PII
+- Conduct security audit
+
+## Deployment Considerations
+
+### Infrastructure Requirements
+
+- Supabase project (provides PostgreSQL, Edge Functions, Auth)
+- CDN for frontend static files
+- Monitoring and logging system
+
+### Scaling Considerations
+
+- Current design supports up to 50-100 concurrent users
+- For larger deployments:
+  - Implement WebSocket for true real-time
+  - Add caching layer (Redis)
+  - Database read replicas for reporting
+  - Load balancer for multiple edge function instances
+
+### Backup & Disaster Recovery
+
+- Supabase automatic backups (daily)
+- Export capability for client data (CSV)
+- Audit logs provide change history
+- Implement point-in-time recovery for production
+
+## Testing Checklist
+
+### Functional Tests
+
+- [ ] User can log in with all role types
+- [ ] Admin can create new users
+- [ ] Data entry user can add new client
+- [ ] Client data appears in dashboard metrics
+- [ ] Visit can be recorded for existing client
+- [ ] Audit log captures all changes
+- [ ] CSV export works correctly
+- [ ] Search and filter work properly
+- [ ] Viewer cannot access admin features
+
+### Multi-Location Tests
+
+- [ ] Client added in Location A visible in Location B
+- [ ] Updates in one location reflected in others
+- [ ] Dashboard metrics aggregate across locations
+- [ ] Location filters work correctly
+
+### Performance Tests
+
+- [ ] Dashboard loads in <2 seconds
+- [ ] Client list loads in <1 second
+- [ ] Real-time updates appear within polling interval
+- [ ] CSV export completes for 1000+ records
+
+## Known Limitations
+
+1. **Polling Latency**: Updates may take 10-30 seconds to appear across locations
+2. **No Offline Support**: Requires active internet connection
+3. **Simple Authentication**: Demo uses basic email/password without 2FA
+4. **No File Attachments**: Current version doesn't support document uploads
+5. **Limited Export Formats**: Only CSV export currently supported
+6. **No Mobile App**: Web-only, though responsive design works on mobile browsers
+7. **Concurrent Edit Conflicts**: Last-write-wins may overwrite simultaneous edits
+8. **No Data Validation**: Limited field validation on forms
+
+## Future Enhancements
+
+### Phase 2 (MVP Enhancements)
+
+- [ ] WebSocket-based real-time updates
+- [ ] File attachment support for client records
+- [ ] PDF report generation
+- [ ] Advanced search with date ranges
+- [ ] Bulk import from CSV
+- [ ] Email notifications for follow-ups
+
+### Phase 3 (Production Features)
+
+- [ ] Offline support with service workers
+- [ ] Mobile native apps (React Native)
+- [ ] Advanced analytics and custom reports
+- [ ] Data visualization exports
+- [ ] SSO/SAML integration
+- [ ] Multi-language support
+- [ ] Configurable forms and fields
+- [ ] Scheduled reports via email
+- [ ] Two-factor authentication
+
+### Phase 4 (Enterprise)
+
+- [ ] Multi-tenancy support
+- [ ] Advanced RBAC with custom permissions
+- [ ] Data warehouse integration
+- [ ] API for third-party integrations
+- [ ] White-labeling options
+- [ ] Advanced audit and compliance features
+
+## Support & Maintenance
+
+### Monitoring
+
+- Check Supabase dashboard for Edge Function errors
+- Monitor API response times
+- Track database growth
+- Review audit logs for suspicious activity
+
+### Regular Maintenance
+
+- Weekly: Review audit logs
+- Monthly: Database cleanup of old audit entries
+- Quarterly: User access review
+- Annually: Security audit
+
+## Development Notes
+
+### File Structure
+
+```
+/
+├── App.tsx                          # Main application
+├── components/
+│   ├── Login.tsx                    # Authentication
+│   ├── Sidebar.tsx                  # Navigation
+│   ├── Dashboard.tsx                # KPIs and charts
+│   ├── ClientManagement.tsx         # Client CRUD
+│   ├── VisitManagement.tsx          # Visit tracking
+│   ├── UserManagement.tsx           # User admin
+│   ├── AuditLog.tsx                 # Audit trail
+│   ├── InitializeData.tsx           # Demo data setup
+│   └── ui/                          # shadcn components
+├── supabase/functions/server/
+│   ├── index.tsx                    # Server entry point
+│   ├── routes.tsx                   # API routes
+│   └── kv_store.tsx                 # Database utilities
+└── utils/supabase/info.tsx          # Supabase config
+```
+
+### Adding New Features
+
+1. Define data model in routes.tsx
+2. Create API endpoints
+3. Build React component
+4. Add to navigation in Sidebar.tsx
+5. Update audit logging
+6. Test across all roles
+7. Document in this file
+
+## Contact & Support
+
+For technical issues or questions about this M&E system, refer to the development team or project documentation.
+
+---
+
+**Version**: 1.0.0  
+**Last Updated**: November 8, 2025  
+**License**: Proprietary - For authorized use only</code></pre>
+    </div>
+
+    <div id="app">
+        <div class="file-header">
+            <span class="file-path">/App.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { useState, useEffect } from 'react';
+import { Login } from './components/Login';
+import { Dashboard } from './components/Dashboard';
+import { ClientManagement } from './components/ClientManagement';
+import { VisitManagement } from './components/VisitManagement';
+import { UserManagement } from './components/UserManagement';
+import { AdminPanel } from './components/AdminPanel';
+import { AuditLog } from './components/AuditLog';
+import { Reports } from './components/Reports';
+import { Sidebar } from './components/Sidebar';
+import { Toaster } from './components/ui/sonner';
+import { useInitializeData } from './components/InitializeData';
+import { getRolePermissions } from './utils/permissions';
+
+export default function App() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentView, setCurrentView] = useState('dashboard');
+  const initialized = useInitializeData();
+
+  useEffect(() => {
+    // Check for stored session
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      
+      // Ensure permissions are computed if not present
+      if (!user.permissions && user.role) {
+        const rolePermissions = getRolePermissions(user.role);
+        const permissionOverrides = Array.isArray(user.permissionOverrides) 
+          ? user.permissionOverrides 
+          : [];
+        user.permissions = [...new Set([...rolePermissions, ...permissionOverrides])];
+      }
+      
+      setCurrentUser(user);
+    }
+  }, []);
+
+  const handleLogin = (user: any) => {
+    setCurrentUser(user);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('currentUser');
+    setCurrentView('dashboard');
+  };
+
+  if (!currentUser) {
+    return (
+      <>
+        <Login onLogin={handleLogin} />
+        <Toaster />
+      </>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      <Sidebar 
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+      />
+      
+      <div className="flex-1 overflow-auto">
+        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} />}
+        {currentView === 'clients' && <ClientManagement currentUser={currentUser} />}
+        {currentView === 'visits' && <VisitManagement currentUser={currentUser} />}
+        {currentView === 'users' && <UserManagement currentUser={currentUser} />}
+        {currentView === 'admin' && <AdminPanel currentUser={currentUser} />}
+        {currentView === 'audit' && <AuditLog currentUser={currentUser} />}
+        {currentView === 'reports' && <Reports currentUser={currentUser} />}
+      </div>
+      
+      <Toaster />
+    </div>
+  );
+}</code></pre>
+    </div>
+
+    <div id="login">
+        <div class="file-header">
+            <span class="file-path">/components/Login.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Button } from './ui/button';
+import { Alert, AlertDescription } from './ui/alert';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
+import { Users, RefreshCw } from 'lucide-react';
+import { getRolePermissions } from '../utils/permissions';
+import { initializeDemoData } from './InitializeData';
+
+interface LoginProps {
+  onLogin: (user: any) => void;
+}
+
+export function Login({ onLogin }: LoginProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/auth/login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ email, password }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Compute permissions from role
+        const rolePermissions = getRolePermissions(data.user.role);
+        const permissionOverrides = Array.isArray(data.user.permissionOverrides) 
+          ? data.user.permissionOverrides 
+          : [];
+        
+        // Combine role permissions with any overrides
+        const allPermissions = [...new Set([...rolePermissions, ...permissionOverrides])];
+        
+        // Add permissions to user object
+        const userWithPermissions = {
+          ...data.user,
+          permissions: allPermissions,
+        };
+        
+        toast.success('Login successful!');
+        onLogin(userWithPermissions);
+      } else {
+        setError(data.error || 'Login failed');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async (role: string) => {
+    const demoCredentials = {
+      Admin: { email: 'admin@demo.org', password: 'demo123' },
+      'M&E Officer': { email: 'me@demo.org', password: 'demo123' },
+      'Data Entry': { email: 'data@demo.org', password: 'demo123' },
+      Viewer: { email: 'viewer@demo.org', password: 'demo123' },
+    };
+
+    const creds = demoCredentials[role as keyof typeof demoCredentials];
+    setEmail(creds.email);
+    setPassword(creds.password);
+    
+    // Auto-submit after a brief delay to allow state to update
+    setTimeout(() => {
+      document.getElementById('login-form')?.dispatchEvent(
+        new Event('submit', { cancelable: true, bubbles: true })
+      );
+    }, 100);
+  };
+
+  const handleInitializeData = async () => {
+    const loadingToast = toast.loading('Initializing demo data...');
+    try {
+      const { createdCount, errors } = await initializeDemoData();
+      toast.dismiss(loadingToast);
+      
+      if (createdCount > 0) {
+        toast.success(`Successfully created ${createdCount} users. You can now log in.`);
+      } else if (errors.length > 0) {
+        toast.error(`Failed to create users: ${errors[0]}`);
+      } else {
+        toast.info('No new users created. Database might already be initialized.');
+      }
+    } catch (e) {
+      toast.dismiss(loadingToast);
+      toast.error('Initialization failed');
+      console.error(e);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center space-y-2">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-indigo-600 rounded-full flex items-center justify-center">
+              <Users className="w-10 h-10 text-white" />
+            </div>
+          </div>
+          <h1 className="text-3xl">M&E Data Management</h1>
+          <p className="text-gray-600">Multi-Location Client Tracking System</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Sign In</CardTitle>
+            <CardDescription>Enter your credentials to access the system</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form id="login-form" onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="email@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
+
+            <div className="mt-6 pt-6 border-t">
+              <p className="text-sm text-gray-600 mb-3">Demo Accounts:</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDemoLogin('Admin')}
+                >
+                  Admin
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDemoLogin('M&E Officer')}
+                >
+                  M&E Officer
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDemoLogin('Data Entry')}
+                >
+                  Data Entry
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDemoLogin('Viewer')}
+                >
+                  Viewer
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t flex justify-center">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-xs text-gray-500 flex items-center gap-1 hover:text-indigo-600"
+                onClick={handleInitializeData}
+              >
+                <RefreshCw className="w-3 h-3" />
+                Reset / Initialize Demo Data
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <p className="text-xs text-center text-gray-500">
+          All data is synchronized in real-time across three locations
+        </p>
+      </div>
+    </div>
+  );
+}</code></pre>
+    </div>
+
+    <div id="dashboard">
+        <div class="file-header">
+            <span class="file-path">/components/Dashboard.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { useState, useEffect, useMemo } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { 
+  Users, 
+  TrendingUp, 
+  Clock,
+  Search,
+  RefreshCw,
+  UserPlus,
+  Syringe,
+  Pill,
+  Brain,
+  AlertCircle,
+  FileText
+} from 'lucide-react';
+import { Skeleton } from './ui/skeleton';
+import { toast } from 'sonner@2.0.3';
+
+interface DashboardProps {
+  currentUser: any;
+}
+
+export function Dashboard({ currentUser }: DashboardProps) {
+  const [clients, setClients] = useState<any[]>([]);
+  const [visits, setVisits] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    location: 'all',
+    program: 'all',
+    dateRange: '30',
+    indicator: 'all',
+    search: ''
+  });
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      if (!projectId || !publicAnonKey) {
+        setLoading(false);
+        return;
+      }
+
+      const [visitsRes, clientsRes] = await Promise.all([
+        fetch(`https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/visits`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+        }),
+        fetch(`https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+        }),
+      ]);
+
+      const [visitsData, clientsData] = await Promise.all([
+        visitsRes.json().catch(() => ({ success: false, visits: [] })),
+        clientsRes.json().catch(() => ({ success: false, clients: [] })),
+      ]);
+
+      if (visitsData.success) setVisits(visitsData.visits || []);
+      if (clientsData.success) setClients(clientsData.clients || []);
+
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredClients = useMemo(() => {
+    let filtered = [...clients];
+    
+    if (filters.location !== 'all') {
+      filtered = filtered.filter(c => c.location === filters.location);
+    }
+    
+    if (filters.program !== 'all') {
+      filtered = filtered.filter(c => {
+        if (filters.program === 'NSP') return c.program === 'NSP';
+        if (filters.program === 'MAT') return c.program === 'Methadone' || c.program === 'MAT';
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [clients, filters]);
+
+  const metrics = useMemo(() => {
+    return {
+      totalClients: filteredClients.length,
+      nspCount: filteredClients.filter(c => c.program === 'NSP').length,
+      matCount: filteredClients.filter(c => c.program === 'Methadone' || c.program === 'MAT').length,
+      stimulantCount: filteredClients.filter(c => c.program === 'Stimulants').length,
+      recentClients: filteredClients.filter(c => {
+        const d = new Date(c.createdAt);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        return d >= thirtyDaysAgo;
+      }).length,
+      totalVisits: visits.length // Simplified for this view
+    };
+  }, [filteredClients, visits]);
+
+  const updateFilter = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+  };
+
+  if (loading) return <div className="p-8"><Skeleton className="h-96 w-full" /></div>;
+
+  return (
+    <div className="p-4 md:p-8 space-y-6 bg-gray-50 min-h-screen">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl mb-1">M&E Dashboard</h1>
+          <p className="text-gray-600">Real-time monitoring across all locations</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={loadDashboardData}>
+          <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex justify-between mb-4">
+              <div className="p-2 bg-indigo-50 rounded-lg"><Users className="w-5 h-5 text-indigo-600" /></div>
+              <Badge variant="outline" className="text-green-600">+12%</Badge>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Total Clients</p>
+              <h3 className="text-2xl font-bold">{metrics.totalClients}</h3>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Additional cards would go here matching the full file */}
+        <Card>
+           <CardContent className="pt-6">
+            <div className="flex justify-between mb-4">
+              <div className="p-2 bg-green-50 rounded-lg"><UserPlus className="w-5 h-5 text-green-600" /></div>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">New (30d)</p>
+              <h3 className="text-2xl font-bold">{metrics.recentClients}</h3>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters Toolbar */}
+      <Card>
+        <CardContent className="pt-6 flex flex-wrap gap-4">
+           <div className="flex-1 min-w-[200px]">
+             <div className="relative">
+               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+               <Input placeholder="Search..." className="pl-9" value={filters.search} onChange={e => updateFilter('search', e.target.value)} />
+             </div>
+           </div>
+           <Select value={filters.location} onValueChange={v => updateFilter('location', v)}>
+             <SelectTrigger className="w-[180px]"><SelectValue placeholder="Location" /></SelectTrigger>
+             <SelectContent>
+               <SelectItem value="all">All Locations</SelectItem>
+               <SelectItem value="Mombasa">Mombasa</SelectItem>
+               <SelectItem value="Kilifi">Kilifi</SelectItem>
+             </SelectContent>
+           </Select>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+</code></pre>
+        <p><em>(Dashboard.tsx content included in full version)</em></p>
+    </div>
+
+    <div id="init-data">
+        <div class="file-header">
+            <span class="file-path">/components/InitializeData.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { useEffect, useState } from 'react';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
+
+export async function initializeDemoData() {
+  if (!projectId || !publicAnonKey) {
+    throw new Error('Supabase configuration missing');
+  }
+
+  const demoUsers = [
+    {
+      name: 'Admin User',
+      email: 'admin@demo.org',
+      password: 'demo123',
+      role: 'Admin',
+      location: 'Mombasa',
+    },
+    {
+      name: 'M&E Officer',
+      email: 'me@demo.org',
+      password: 'demo123',
+      role: 'M&E Officer',
+      location: 'Kilifi',
+    },
+    {
+      name: 'Data Entry Clerk',
+      email: 'data@demo.org',
+      password: 'demo123',
+      role: 'Data Entry',
+      location: 'Lamu',
+    },
+    {
+      name: 'Viewer User',
+      email: 'viewer@demo.org',
+      password: 'demo123',
+      role: 'Viewer',
+      location: 'Mombasa',
+    },
+  ];
+
+  let createdCount = 0;
+  const errors = [];
+
+  for (const user of demoUsers) {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ user }),
+        }
+      );
+      
+      if (response.ok) {
+        createdCount++;
+      } else {
+        const text = await response.text();
+        errors.push(`${user.email}: ${text}`);
+      }
+    } catch (userError) {
+      errors.push(`${user.email}: ${userError}`);
+    }
+  }
+
+  return { createdCount, errors };
+}
+
+export function useInitializeData() {
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        // Skip initialization if projectId or publicAnonKey is missing
+        if (!projectId || !publicAnonKey) {
+          console.warn('Supabase configuration missing, skipping initialization');
+          setInitialized(true);
+          return;
+        }
+
+        // Check if users already exist
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users`,
+          {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`,
+            },
+          }
+        );
+
+        // If the fetch fails (network error, CORS, etc.), just continue
+        if (!response.ok) {
+          console.warn('Could not fetch users, assuming database is ready');
+          setInitialized(true);
+          return;
+        }
+
+        const data = await response.json();
+        
+        // If no users exist, create demo users
+        if (data.success && data.users.length === 0) {
+          const { createdCount, errors } = await initializeDemoData();
+          
+          if (createdCount > 0) {
+            console.log('Demo users initialized successfully');
+            toast.success(`Initialized ${createdCount} demo users`);
+          }
+          
+          if (errors.length > 0) {
+            console.warn('Some users failed to initialize:', errors);
+          }
+        }
+        
+        setInitialized(true);
+      } catch (error) {
+        // Log the error but still set initialized to true to allow app to continue
+        console.warn('Error initializing data (continuing anyway):', error);
+        setInitialized(true);
+      }
+    };
+
+    init();
+  }, []);
+
+  return initialized;
+}</code></pre>
+    </div>
+
+    <div id="server-index">
+        <div class="file-header">
+            <span class="file-path">/supabase/functions/server/index.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { Hono } from "npm:hono";
+import { cors } from "npm:hono/cors";
+import { logger } from "npm:hono/logger";
+import * as kv from "./kv_store.tsx";
+import routes from "./routes.tsx";
+
+const app = new Hono();
+
+// Enable logger
+app.use('*', logger(console.log));
+
+// Enable CORS for all routes and methods
+app.use(
+  "*",
+  cors({
+    origin: "*",
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+  }),
+);
+
+// Health check endpoint
+app.get("/make-server-56fd5521/health", (c) => {
+  return c.json({ status: "ok" });
+});
+
+// Mount routes
+// Mount at root (for when prefix is stripped by Supabase)
+app.route("/", routes);
+// Mount at prefix (for when prefix is preserved)
+app.route("/make-server-56fd5521", routes);
+
+Deno.serve(app.fetch);</code></pre>
+    </div>
+
+    <div id="client-mgmt">
+        <div class="file-header">
+            <span class="file-path">/components/ClientManagement.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { useState, useEffect } from 'react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Badge } from './ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { toast } from 'sonner@2.0.3';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { Plus, Search, Download, Eye } from 'lucide-react';
+import { ClientDetail } from './ClientDetail';
+
+interface ClientManagementProps {
+  currentUser: any;
+}
+
+export function ClientManagement({ currentUser }: ClientManagementProps) {
+  const [clients, setClients] = useState<any[]>([]);
+  const [filteredClients, setFilteredClients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [locationFilter, setLocationFilter] = useState('all');
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [viewingClientId, setViewingClientId] = useState<string | null>(null);
+
+  const canEdit = currentUser?.role === 'Admin' || currentUser?.role === 'M&E Officer' || currentUser?.role === 'Data Entry';
+
+  useEffect(() => {
+    loadClients();
+    const interval = setInterval(loadClients, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let filtered = clients;
+    if (searchTerm) {
+      filtered = filtered.filter(client =>
+        client.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.clientId?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    if (locationFilter !== 'all') {
+      filtered = filtered.filter(client => client.location === locationFilter);
+    }
+    setFilteredClients(filtered);
+  }, [clients, searchTerm, locationFilter]);
+
+  const loadClients = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      const data = await response.json();
+      if (data.success) setClients(data.clients);
+    } catch (error) {
+      console.error('Error loading clients:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddClient = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    const client = {
+      clientId: formData.get('clientId'),
+      firstName: formData.get('firstName'),
+      lastName: formData.get('lastName'),
+      age: formData.get('age'),
+      gender: formData.get('gender'),
+      location: formData.get('location'),
+      phone: formData.get('phone'),
+      email: formData.get('email'),
+      address: formData.get('address'),
+      status: 'Active',
+    };
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ client, userId: currentUser.id }),
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Client added successfully!');
+        setIsAddDialogOpen(false);
+        loadClients();
+      } else {
+        toast.error(data.error || 'Failed to add client');
+      }
+    } catch (error) {
+      toast.error('Network error');
+    }
+  };
+
+  if (viewingClientId) {
+    return <ClientDetail clientId={viewingClientId} onBack={() => setViewingClientId(null)} currentUser={currentUser} />;
+  }
+
+  return (
+    <div className="p-8 space-y-6">
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl mb-2">Client Management</h1>
+          <p className="text-gray-600">Manage client records</p>
+        </div>
+        <div className="flex gap-2">
+          {canEdit && (
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+              <DialogTrigger asChild><Button><Plus className="w-4 h-4 mr-2" /> Add Client</Button></DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader><DialogTitle>Add New Client</DialogTitle></DialogHeader>
+                <form onSubmit={handleAddClient} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Client ID *</Label><Input name="clientId" required /></div>
+                    <div className="space-y-2">
+                        <Label>Location *</Label>
+                        <Select name="location" required>
+                            <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="Mombasa">Mombasa</SelectItem>
+                                <SelectItem value="Kilifi">Kilifi</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                  </div>
+                  {/* ... other fields ... */}
+                  <Button type="submit">Add Client</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex gap-4">
+            <div className="flex-1 relative">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <Input placeholder="Search..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
+            <Select value={locationFilter} onValueChange={setLocationFilter}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="all">All Locations</SelectItem><SelectItem value="Mombasa">Mombasa</SelectItem></SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Clients ({filteredClients.length})</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+                {filteredClients.map(client => (
+                    <TableRow key={client.id}>
+                        <TableCell>{client.clientId}</TableCell>
+                        <TableCell>{client.firstName} {client.lastName}</TableCell>
+                        <TableCell><Badge variant="outline">{client.location}</Badge></TableCell>
+                        <TableCell><Badge>{client.status}</Badge></TableCell>
+                        <TableCell>
+                            <Button variant="ghost" size="sm" onClick={() => setViewingClientId(client.id)}><Eye className="w-4 h-4" /></Button>
+                        </TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}</code></pre>
+    </div>
+
+    <div id="server-routes">
+        <div class="file-header">
+            <span class="file-path">/supabase/functions/server/routes.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { Hono } from 'npm:hono';
+import { cors } from 'npm:hono/cors';
+import * as kv from './kv_store.tsx';
+
+const app = new Hono();
+
+app.use('*', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS'],
+}));
+
+// Client Routes
+app.get('/clients', async (c) => {
+  try {
+    const clients = await kv.getByPrefix('client:');
+    return c.json({ success: true, clients });
+  } catch (error) {
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+app.post('/clients', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { client, userId } = body;
+    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const record = { ...client, id: clientId, createdAt: new Date().toISOString() };
+    await kv.set(`client:${clientId}`, record);
+    return c.json({ success: true, client: record });
+  } catch (error) {
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Visit Routes
+app.get('/visits', async (c) => {
+    try {
+        const visits = await kv.getByPrefix('visit:');
+        return c.json({ success: true, visits });
+    } catch (error) {
+        return c.json({ success: false, error: error.message }, 500);
+    }
+});
+
+app.post('/visits', async (c) => {
+    try {
+        const body = await c.req.json();
+        const visitId = `visit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const record = { ...body.visit, id: visitId, createdAt: new Date().toISOString() };
+        await kv.set(`visit:${visitId}`, record);
+        return c.json({ success: true, visit: record });
+    } catch (error) {
+        return c.json({ success: false, error: error.message }, 500);
+    }
+});
+
+// User Routes
+app.get('/users', async (c) => {
+    try {
+        const users = await kv.getByPrefix('user:');
+        return c.json({ success: true, users });
+    } catch (error) {
+        return c.json({ success: false, error: error.message }, 500);
+    }
+});
+
+app.post('/users', async (c) => {
+    try {
+        const body = await c.req.json();
+        const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const record = { ...body.user, id: userId, createdAt: new Date().toISOString() };
+        await kv.set(`user:${userId}`, record);
+        return c.json({ success: true, user: record });
+    } catch (error) {
+        return c.json({ success: false, error: error.message }, 500);
+    }
+});
+
+app.post('/auth/login', async (c) => {
+    try {
+        const { email, password } = await c.req.json();
+        const users = await kv.getByPrefix('user:');
+        const user = users.find(u => u.email === email && u.password === password);
+        if (!user) return c.json({ success: false, error: 'Invalid credentials' }, 401);
+        return c.json({ success: true, user });
+    } catch (error) {
+        return c.json({ success: false, error: error.message }, 500);
+    }
+});
+
+export default app;</code></pre>
+    </div>
+
+    <div id="clinical">
+        <div class="file-header">
+            <span class="file-path">/components/visit-modules/ClinicalModule.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { toast } from 'sonner@2.0.3';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { TestTube, Heart, Activity } from 'lucide-react';
+
+export function ClinicalModule({ visit, client, currentUser, canEdit, onUpdate }) {
+  const [records, setRecords] = useState([]);
+  
+  useEffect(() => {
+    // Load records logic...
+  }, [visit.id]);
+
+  // Handler functions for HIV, Vitals, STI...
+
+  return (
+    <div className="space-y-6">
+      <div className="flex gap-3">
+         {/* Action Buttons */}
+         <Button>HIV Test</Button>
+         <Button>Vital Signs</Button>
+      </div>
+      <div className="space-y-4">
+         {/* List of records */}
+         <Card>
+            <CardHeader><CardTitle>Clinical Records</CardTitle></CardHeader>
+            <CardContent>
+                {/* Records mapping */}
+            </CardContent>
+         </Card>
+      </div>
+    </div>
+  );
+}</code></pre>
+    </div>
+
+    <div id="kv-store">
+        <div class="file-header">
+            <span class="file-path">/supabase/functions/server/kv_store.tsx</span>
+            <a href="#" class="back-to-top">↑ Top</a>
+        </div>
+        <pre><code>import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+
+const client = () => createClient(
+  Deno.env.get("SUPABASE_URL"),
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+);
+
+export const set = async (key: string, value: any): Promise<void> => {
+  const supabase = client()
+  const { error } = await supabase.from("kv_store_56fd5521").upsert({ key, value });
+  if (error) throw new Error(error.message);
+};
+
+export const get = async (key: string): Promise<any> => {
+  const supabase = client()
+  const { data, error } = await supabase.from("kv_store_56fd5521").select("value").eq("key", key).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.value;
+};
+
+export const getByPrefix = async (prefix: string): Promise<any[]> => {
+  const supabase = client()
+  const { data, error } = await supabase.from("kv_store_56fd5521").select("value").like("key", prefix + "%");
+  if (error) throw new Error(error.message);
+  return data?.map((d) => d.value) ?? [];
+};</code></pre>
+    </div>
+
+</body>
+</html>

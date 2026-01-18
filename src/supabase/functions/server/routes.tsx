@@ -14,7 +14,7 @@ app.use('*', cors({
 // ==================== CLIENT MANAGEMENT ====================
 
 // Create new client
-app.post('/make-server-56fd5521/clients', async (c) => {
+app.post('/clients', async (c) => {
   try {
     const body = await c.req.json();
     const { client, userId } = body;
@@ -51,11 +51,53 @@ app.post('/make-server-56fd5521/clients', async (c) => {
   }
 });
 
-// Get all clients
-app.get('/make-server-56fd5521/clients', async (c) => {
+// [UPDATED] Get all clients (With Filtering & Pagination)
+app.get('/clients', async (c) => {
   try {
-    const clients = await kv.getByPrefix('client:');
-    return c.json({ success: true, clients });
+    // 1. Get Filters from URL
+    const location = c.req.query('location');
+    const program = c.req.query('program');
+    const search = c.req.query('search')?.toLowerCase();
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '50');
+
+    // 2. Fetch all data (KV limitation)
+    let clients = await kv.getByPrefix('client:');
+
+    // 3. Apply Filters on Server Side
+    if (location && location !== 'all') {
+      clients = clients.filter(c => c.location === location);
+    }
+    
+    if (program && program !== 'all') {
+      clients = clients.filter(c => {
+         if (program === 'NSP') return c.program === 'NSP';
+         if (program === 'MAT') return c.program === 'Methadone' || c.program === 'MAT';
+         return c.program === program;
+      });
+    }
+
+    if (search) {
+      clients = clients.filter(c => 
+        (c.firstName && c.firstName.toLowerCase().includes(search)) || 
+        (c.lastName && c.lastName.toLowerCase().includes(search)) || 
+        (c.clientId && c.clientId.toLowerCase().includes(search))
+      );
+    }
+
+    // 4. Calculate Stats & Paginate
+    const totalCount = clients.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedClients = clients.slice(startIndex, startIndex + limit);
+
+    return c.json({ 
+      success: true, 
+      clients: paginatedClients,
+      total: totalCount,
+      page,
+      totalPages: Math.ceil(totalCount / limit)
+    });
+
   } catch (error) {
     console.error('Error fetching clients:', error);
     return c.json({ success: false, error: error.message }, 500);
@@ -63,7 +105,7 @@ app.get('/make-server-56fd5521/clients', async (c) => {
 });
 
 // Get single client
-app.get('/make-server-56fd5521/clients/:id', async (c) => {
+app.get('/clients/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const client = await kv.get(`client:${id}`);
@@ -80,7 +122,7 @@ app.get('/make-server-56fd5521/clients/:id', async (c) => {
 });
 
 // Update client
-app.put('/make-server-56fd5521/clients/:id', async (c) => {
+app.put('/clients/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -135,7 +177,7 @@ app.put('/make-server-56fd5521/clients/:id', async (c) => {
 // ==================== VISITS/ENCOUNTERS ====================
 
 // Create visit
-app.post('/make-server-56fd5521/visits', async (c) => {
+app.post('/visits', async (c) => {
   try {
     const body = await c.req.json();
     const { visit, userId } = body;
@@ -172,7 +214,7 @@ app.post('/make-server-56fd5521/visits', async (c) => {
 });
 
 // Get visits for a client
-app.get('/make-server-56fd5521/visits/client/:clientId', async (c) => {
+app.get('/visits/client/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     const allVisits = await kv.getByPrefix('visit:');
@@ -185,12 +227,24 @@ app.get('/make-server-56fd5521/visits/client/:clientId', async (c) => {
   }
 });
 
-// Get all visits (across all clients)
-app.get('/make-server-56fd5521/visits', async (c) => {
+// [UPDATED] Get recent visits (With Limiting & Sorting)
+app.get('/visits', async (c) => {
   try {
-    const visits = await kv.getByPrefix('visit:');
-    visits.sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime());
-    return c.json({ success: true, visits });
+    const limit = parseInt(c.req.query('limit') || '50');
+    
+    let visits = await kv.getByPrefix('visit:');
+    
+    // Sort Newest First (Safe handling of missing dates)
+    visits.sort((a, b) => {
+       const dateA = a.visitDate || a.createdAt || 0;
+       const dateB = b.visitDate || b.createdAt || 0;
+       return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+
+    // Slice to limit
+    const recentVisits = visits.slice(0, limit);
+
+    return c.json({ success: true, visits: recentVisits });
   } catch (error) {
     console.error('Error fetching visits:', error);
     return c.json({ success: false, error: error.message }, 500);
@@ -198,7 +252,7 @@ app.get('/make-server-56fd5521/visits', async (c) => {
 });
 
 // Add mental health record
-app.post('/make-server-56fd5521/mental-health', async (c) => {
+app.post('/mental-health', async (c) => {
   try {
     const { record, userId } = await c.req.json();
     const id = `mental-health:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -257,7 +311,7 @@ app.post('/make-server-56fd5521/mental-health', async (c) => {
   }
 });
 
-app.put('/make-server-56fd5521/mental-health/:recordId', async (c) => {
+app.put('/mental-health/:recordId', async (c) => {
   try {
     const recordId = c.req.param('recordId');
     const { record, userId } = await c.req.json();
@@ -287,7 +341,7 @@ app.put('/make-server-56fd5521/mental-health/:recordId', async (c) => {
 });
 
 // Get mental health records for a visit
-app.get('/make-server-56fd5521/mental-health/:visitId', async (c) => {
+app.get('/mental-health/:visitId', async (c) => {
   try {
     const visitId = c.req.param('visitId');
     const allRecords = await kv.getByPrefix('mental-health:');
@@ -300,7 +354,7 @@ app.get('/make-server-56fd5521/mental-health/:visitId', async (c) => {
 });
 
 // Placeholder routes for other modules
-app.get('/make-server-56fd5521/clinical/:visitId', async (c) => {
+app.get('/clinical/:visitId', async (c) => {
   try {
     const visitId = c.req.param('visitId');
     const allRecords = await kv.getByPrefix('clinical:');
@@ -312,7 +366,7 @@ app.get('/make-server-56fd5521/clinical/:visitId', async (c) => {
   }
 });
 
-app.post('/make-server-56fd5521/clinical', async (c) => {
+app.post('/clinical', async (c) => {
   try {
     const { record, userId } = await c.req.json();
     const id = `clinical:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -341,7 +395,7 @@ app.post('/make-server-56fd5521/clinical', async (c) => {
   }
 });
 
-app.put('/make-server-56fd5521/clinical/:recordId', async (c) => {
+app.put('/clinical/:recordId', async (c) => {
   try {
     const recordId = c.req.param('recordId');
     const { record, userId } = await c.req.json();
@@ -370,7 +424,7 @@ app.put('/make-server-56fd5521/clinical/:recordId', async (c) => {
   }
 });
 
-app.get('/make-server-56fd5521/psychosocial/:visitId', async (c) => {
+app.get('/psychosocial/:visitId', async (c) => {
   try {
     const visitId = c.req.param('visitId');
     const allRecords = await kv.getByPrefix('psychosocial:');
@@ -382,7 +436,7 @@ app.get('/make-server-56fd5521/psychosocial/:visitId', async (c) => {
   }
 });
 
-app.post('/make-server-56fd5521/psychosocial', async (c) => {
+app.post('/psychosocial', async (c) => {
   try {
     const { record, userId } = await c.req.json();
     const id = `psychosocial:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -411,7 +465,7 @@ app.post('/make-server-56fd5521/psychosocial', async (c) => {
   }
 });
 
-app.put('/make-server-56fd5521/psychosocial/:recordId', async (c) => {
+app.put('/psychosocial/:recordId', async (c) => {
   try {
     const recordId = c.req.param('recordId');
     const { record, userId } = await c.req.json();
@@ -440,7 +494,7 @@ app.put('/make-server-56fd5521/psychosocial/:recordId', async (c) => {
   }
 });
 
-app.get('/make-server-56fd5521/nsp/:visitId', async (c) => {
+app.get('/nsp/:visitId', async (c) => {
   try {
     const visitId = c.req.param('visitId');
     const allRecords = await kv.getByPrefix('nsp:');
@@ -452,7 +506,7 @@ app.get('/make-server-56fd5521/nsp/:visitId', async (c) => {
   }
 });
 
-app.post('/make-server-56fd5521/nsp', async (c) => {
+app.post('/nsp', async (c) => {
   try {
     const { record, userId } = await c.req.json();
     const id = `nsp:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -481,7 +535,7 @@ app.post('/make-server-56fd5521/nsp', async (c) => {
   }
 });
 
-app.put('/make-server-56fd5521/nsp/:recordId', async (c) => {
+app.put('/nsp/:recordId', async (c) => {
   try {
     const recordId = c.req.param('recordId');
     const { record, userId } = await c.req.json();
@@ -510,7 +564,7 @@ app.put('/make-server-56fd5521/nsp/:recordId', async (c) => {
   }
 });
 
-app.get('/make-server-56fd5521/condom/:visitId', async (c) => {
+app.get('/condom/:visitId', async (c) => {
   try {
     const visitId = c.req.param('visitId');
     const allRecords = await kv.getByPrefix('condom:');
@@ -522,7 +576,7 @@ app.get('/make-server-56fd5521/condom/:visitId', async (c) => {
   }
 });
 
-app.post('/make-server-56fd5521/condom', async (c) => {
+app.post('/condom', async (c) => {
   try {
     const { record, userId } = await c.req.json();
     const id = `condom:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -551,7 +605,7 @@ app.post('/make-server-56fd5521/condom', async (c) => {
   }
 });
 
-app.put('/make-server-56fd5521/condom/:recordId', async (c) => {
+app.put('/condom/:recordId', async (c) => {
   try {
     const recordId = c.req.param('recordId');
     const { record, userId } = await c.req.json();
@@ -580,7 +634,7 @@ app.put('/make-server-56fd5521/condom/:recordId', async (c) => {
   }
 });
 
-app.get('/make-server-56fd5521/mat/:visitId', async (c) => {
+app.get('/mat/:visitId', async (c) => {
   try {
     const visitId = c.req.param('visitId');
     const allRecords = await kv.getByPrefix('mat:');
@@ -592,7 +646,7 @@ app.get('/make-server-56fd5521/mat/:visitId', async (c) => {
   }
 });
 
-app.post('/make-server-56fd5521/mat', async (c) => {
+app.post('/mat', async (c) => {
   try {
     const { record, userId } = await c.req.json();
     const id = `mat:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
@@ -621,7 +675,7 @@ app.post('/make-server-56fd5521/mat', async (c) => {
   }
 });
 
-app.put('/make-server-56fd5521/mat/:recordId', async (c) => {
+app.put('/mat/:recordId', async (c) => {
   try {
     const recordId = c.req.param('recordId');
     const { record, userId } = await c.req.json();
@@ -653,7 +707,7 @@ app.put('/make-server-56fd5521/mat/:recordId', async (c) => {
 // ==================== USERS ====================
 
 // Create user
-app.post('/make-server-56fd5521/users', async (c) => {
+app.post('/users', async (c) => {
   try {
     const body = await c.req.json();
     const { user, adminUserId } = body;
@@ -692,7 +746,7 @@ app.post('/make-server-56fd5521/users', async (c) => {
 });
 
 // Get all users
-app.get('/make-server-56fd5521/users', async (c) => {
+app.get('/users', async (c) => {
   try {
     const users = await kv.getByPrefix('user:');
     return c.json({ success: true, users });
@@ -703,7 +757,7 @@ app.get('/make-server-56fd5521/users', async (c) => {
 });
 
 // Update user
-app.put('/make-server-56fd5521/users/:id', async (c) => {
+app.put('/users/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -744,7 +798,7 @@ app.put('/make-server-56fd5521/users/:id', async (c) => {
 });
 
 // Delete/Deactivate user
-app.delete('/make-server-56fd5521/users/:id', async (c) => {
+app.delete('/users/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -788,7 +842,7 @@ app.delete('/make-server-56fd5521/users/:id', async (c) => {
 });
 
 // Login/authenticate user
-app.post('/make-server-56fd5521/auth/login', async (c) => {
+app.post('/auth/login', async (c) => {
   try {
     const body = await c.req.json();
     const { email, password } = body;
@@ -834,7 +888,7 @@ app.post('/make-server-56fd5521/auth/login', async (c) => {
 // ==================== ROLES & PERMISSIONS ====================
 
 // Get all roles
-app.get('/make-server-56fd5521/roles', async (c) => {
+app.get('/roles', async (c) => {
   try {
     // Return empty array for now - roles are defined in frontend
     // Custom roles can be stored in KV store
@@ -847,7 +901,7 @@ app.get('/make-server-56fd5521/roles', async (c) => {
 });
 
 // Create custom role
-app.post('/make-server-56fd5521/roles', async (c) => {
+app.post('/roles', async (c) => {
   try {
     const body = await c.req.json();
     const { role, adminUserId } = body;
@@ -884,7 +938,7 @@ app.post('/make-server-56fd5521/roles', async (c) => {
 });
 
 // Update role
-app.put('/make-server-56fd5521/roles/:id', async (c) => {
+app.put('/roles/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
@@ -925,7 +979,7 @@ app.put('/make-server-56fd5521/roles/:id', async (c) => {
 });
 
 // Get permission templates
-app.get('/make-server-56fd5521/permission-templates', async (c) => {
+app.get('/permission-templates', async (c) => {
   try {
     // Return empty array for now - templates are defined in frontend
     return c.json({ success: true, templates: [] });
@@ -937,7 +991,7 @@ app.get('/make-server-56fd5521/permission-templates', async (c) => {
 
 // ==================== DASHBOARD METRICS ====================
 
-app.get('/make-server-56fd5521/metrics', async (c) => {
+app.get('/metrics', async (c) => {
   try {
     const clients = await kv.getByPrefix('client:');
     const visits = await kv.getByPrefix('visit:');
@@ -1011,7 +1065,7 @@ app.get('/make-server-56fd5521/metrics', async (c) => {
 
 // ==================== AUDIT LOGS ====================
 
-app.get('/make-server-56fd5521/audit', async (c) => {
+app.get('/audit', async (c) => {
   try {
     const logs = await kv.getByPrefix('audit:');
     // Sort by timestamp descending
@@ -1025,7 +1079,7 @@ app.get('/make-server-56fd5521/audit', async (c) => {
 });
 
 // Get audit logs for specific entity
-app.get('/make-server-56fd5521/audit/:entityType/:entityId', async (c) => {
+app.get('/audit/:entityType/:entityId', async (c) => {
   try {
     const entityType = c.req.param('entityType');
     const entityId = c.req.param('entityId');
@@ -1047,7 +1101,7 @@ app.get('/make-server-56fd5521/audit/:entityType/:entityId', async (c) => {
 // ==================== CLINICAL RESULTS ====================
 
 // Add clinical result
-app.post('/make-server-56fd5521/clinical-results', async (c) => {
+app.post('/clinical-results', async (c) => {
   try {
     const body = await c.req.json();
     const { result, userId } = body;
@@ -1117,7 +1171,7 @@ app.post('/make-server-56fd5521/clinical-results', async (c) => {
 });
 
 // Get clinical results for client
-app.get('/make-server-56fd5521/clinical-results/client/:clientId', async (c) => {
+app.get('/clinical-results/client/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     const allResults = await kv.getByPrefix('clinical-result:');
@@ -1134,7 +1188,7 @@ app.get('/make-server-56fd5521/clinical-results/client/:clientId', async (c) => 
 // ==================== INTERVENTIONS ====================
 
 // Add intervention
-app.post('/make-server-56fd5521/interventions', async (c) => {
+app.post('/interventions', async (c) => {
   try {
     const body = await c.req.json();
     const { intervention, userId } = body;
@@ -1171,7 +1225,7 @@ app.post('/make-server-56fd5521/interventions', async (c) => {
 });
 
 // Get interventions for client
-app.get('/make-server-56fd5521/interventions/client/:clientId', async (c) => {
+app.get('/interventions/client/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     const allInterventions = await kv.getByPrefix('intervention:');
@@ -1188,7 +1242,7 @@ app.get('/make-server-56fd5521/interventions/client/:clientId', async (c) => {
 // ==================== TIMELINE ====================
 
 // Get full timeline for client
-app.get('/make-server-56fd5521/timeline/:clientId', async (c) => {
+app.get('/timeline/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     
@@ -1218,7 +1272,7 @@ app.get('/make-server-56fd5521/timeline/:clientId', async (c) => {
 // ==================== REPORTS ====================
 
 // Get program report data
-app.get('/make-server-56fd5521/reports/program', async (c) => {
+app.get('/reports/program', async (c) => {
   try {
     const program = c.req.query('program');
     const dateRange = c.req.query('dateRange') || 'month';
@@ -1403,7 +1457,7 @@ app.get('/make-server-56fd5521/reports/program', async (c) => {
 });
 
 // Get client report data
-app.get('/make-server-56fd5521/reports/client/:clientId', async (c) => {
+app.get('/reports/client/:clientId', async (c) => {
   try {
     const clientId = c.req.param('clientId');
     
@@ -1474,7 +1528,7 @@ app.get('/make-server-56fd5521/reports/client/:clientId', async (c) => {
 });
 
 // Get commodities report data
-app.get('/make-server-56fd5521/reports/commodities', async (c) => {
+app.get('/reports/commodities', async (c) => {
   try {
     const commodity = c.req.query('commodity');
     const location = c.req.query('location') || 'all';

@@ -11,7 +11,7 @@ app.use('*', logger(console.log));
 
 // Enable CORS for all routes and methods
 app.use(
-  "/*",
+  "*",
   cors({
     origin: "*",
     allowHeaders: ["Content-Type", "Authorization"],
@@ -27,6 +27,9 @@ app.get("/make-server-56fd5521/health", (c) => {
 });
 
 // Mount routes
+// Mount at root (for when prefix is stripped by Supabase)
 app.route("/", routes);
+// Mount at prefix (for when prefix is preserved)
+app.route("/make-server-56fd5521", routes);
 
 Deno.serve(app.fetch);

@@ -6,8 +6,9 @@ import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Users } from 'lucide-react';
+import { Users, RefreshCw } from 'lucide-react';
 import { getRolePermissions } from '../utils/permissions';
+import { initializeDemoData } from './InitializeData';
 
 interface LoginProps {
   onLogin: (user: any) => void;
@@ -80,11 +81,32 @@ export function Login({ onLogin }: LoginProps) {
     setEmail(creds.email);
     setPassword(creds.password);
     
+    // Auto-submit after a brief delay to allow state to update
     setTimeout(() => {
       document.getElementById('login-form')?.dispatchEvent(
         new Event('submit', { cancelable: true, bubbles: true })
       );
     }, 100);
+  };
+
+  const handleInitializeData = async () => {
+    const loadingToast = toast.loading('Initializing demo data...');
+    try {
+      const { createdCount, errors } = await initializeDemoData();
+      toast.dismiss(loadingToast);
+      
+      if (createdCount > 0) {
+        toast.success(`Successfully created ${createdCount} users. You can now log in.`);
+      } else if (errors.length > 0) {
+        toast.error(`Failed to create users: ${errors[0]}`);
+      } else {
+        toast.info('No new users created. Database might already be initialized.');
+      }
+    } catch (e) {
+      toast.dismiss(loadingToast);
+      toast.error('Initialization failed');
+      console.error(e);
+    }
   };
 
   return (
@@ -174,6 +196,18 @@ export function Login({ onLogin }: LoginProps) {
                   Viewer
                 </Button>
               </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t flex justify-center">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-xs text-gray-500 flex items-center gap-1 hover:text-indigo-600"
+                onClick={handleInitializeData}
+              >
+                <RefreshCw className="w-3 h-3" />
+                Reset / Initialize Demo Data
+              </Button>
             </div>
           </CardContent>
         </Card>
