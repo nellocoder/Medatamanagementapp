@@ -1079,6 +1079,8 @@ app.get('/metrics', async (c) => {
     const clients = await kv.getByPrefix('client:');
     const visits = await kv.getByPrefix('visit:');
     const users = await kv.getByPrefix('user:');
+    const psychosocial = await kv.getByPrefix('psychosocial:');
+    const clinicalResults = await kv.getByPrefix('clinical-result:');
     
     // Calculate metrics
     const totalClients = clients.length;
@@ -1126,6 +1128,61 @@ app.get('/metrics', async (c) => {
     const recentClients = clients.filter(c => c.createdAt && new Date(c.createdAt) > thirtyDaysAgo).length;
     const recentVisits = visits.filter(v => v.createdAt && new Date(v.createdAt) > thirtyDaysAgo).length;
     
+    // Service Delivery Summary (Last 7 Days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const isInLast7Days = (dateStr: string) => {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d >= sevenDaysAgo;
+    };
+
+    const clientGenderMap = clients.reduce((acc: any, client: any) => {
+        acc[client.id] = client.gender || 'Not recorded';
+        return acc;
+    }, {});
+    
+    const getGender = (clientId: string) => clientGenderMap[clientId] || 'Not recorded';
+
+    const serviceSummary: any = {
+        'Psychosocial Sessions': { total: 0, male: 0, female: 0, notRecorded: 0 },
+        'HIV Testing': { total: 0, male: 0, female: 0, notRecorded: 0 },
+        'Harm Reduction Education': { total: 0, male: 0, female: 0, notRecorded: 0 },
+    };
+    
+    const increment = (category: string, genderRaw: string) => {
+        const gender = (genderRaw || '').toLowerCase();
+        serviceSummary[category].total++;
+        if (gender === 'male') serviceSummary[category].male++;
+        else if (gender === 'female') serviceSummary[category].female++;
+        else serviceSummary[category].notRecorded++;
+    };
+
+    // 1. Psychosocial Sessions
+    psychosocial.forEach((record: any) => {
+        if (isInLast7Days(record.createdAt || record.providedAt)) {
+            increment('Psychosocial Sessions', getGender(record.clientId));
+        }
+    });
+
+    // 2. HIV Testing
+    clinicalResults.forEach((record: any) => {
+        if (record.type === 'lab' && record.hivTest && isInLast7Days(record.createdAt || record.date)) {
+             increment('HIV Testing', getGender(record.clientId));
+        }
+    });
+
+    // 3. Harm Reduction Education (from visits)
+    visits.forEach((visit: any) => {
+        if (isInLast7Days(visit.createdAt || visit.visitDate) && visit.servicesProvided) {
+            const services = visit.servicesProvided.toLowerCase();
+            if (services.includes('education') || services.includes('prevention') || services.includes('naloxone')) {
+                 increment('Harm Reduction Education', getGender(visit.clientId));
+            }
+        }
+    });
+
     return c.json({
       success: true,
       metrics: {
@@ -1138,6 +1195,7 @@ app.get('/metrics', async (c) => {
         locationCounts,
         genderCounts,
         ageGroups,
+        serviceSummary,
       }
     });
   } catch (error) {

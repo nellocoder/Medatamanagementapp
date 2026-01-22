@@ -362,9 +362,8 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Clients by Location</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Added style wrapper to fix width(-1) error */}
-            <div className="h-[300px] w-full" style={{ minWidth: '1px' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+            <div className="h-[300px] w-full relative">
+              <ResponsiveContainer width="99%" height="100%">
                 <BarChart data={locationData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" />
@@ -383,9 +382,8 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Age Demographics</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Added style wrapper to fix width(-1) error */}
-            <div className="h-[300px] w-full" style={{ minWidth: '1px' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+            <div className="h-[300px] w-full relative">
+              <ResponsiveContainer width="99%" height="100%">
                 <PieChart>
                   <Pie
                     data={ageData}
@@ -410,28 +408,73 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
 
       {/* Activity Feed & Sync */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Activity Feed */}
+        {/* Service Delivery Summary */}
         <Card className="rounded-2xl shadow-sm border-0 bg-white lg:col-span-8">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="w-4 h-4" /> Recent Activity
+              <Activity className="w-4 h-4" /> Service Delivery Summary (Last 7 Days)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentVisits.map((visit) => (
-                <div key={visit.id} className="flex items-start gap-4 p-3 hover:bg-gray-50 rounded-lg">
-                  <div className="p-2 bg-blue-50 rounded-full">
-                    <FileText className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{visit.visitType || 'Visit Recorded'}</p>
-                    <p className="text-xs text-gray-500">{new Date(visit.createdAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              ))}
-              {recentVisits.length === 0 && <p className="text-gray-500 text-center py-4">No recent activity</p>}
-            </div>
+            {metrics.serviceSummary ? (
+              <div className="space-y-6">
+                 {/* Check if all totals are 0 */}
+                 {Object.values(metrics.serviceSummary).every((s: any) => s.total === 0) ? (
+                    <p className="text-gray-500 text-center py-4">No services delivered in the last 7 days.</p>
+                 ) : (
+                    Object.entries(metrics.serviceSummary).map(([service, stats]: [string, any]) => {
+                       if (stats.total === 0) return null;
+                       
+                       return (
+                         <div key={service} className="space-y-2 border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                            <div className="flex justify-between items-center mb-1">
+                               <h4 className="font-medium text-gray-900">{service}</h4>
+                               <div className="text-right">
+                                 <span className="text-xs text-gray-500 uppercase tracking-wider mr-2">Total</span>
+                                 <span className="font-bold text-lg text-indigo-600">{stats.total}</span>
+                               </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-4 text-sm">
+                                <div className="flex items-center gap-1.5 min-w-[80px]">
+                                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                                  <span className="text-gray-600">Male:</span>
+                                  <span className="font-medium">{stats.male}</span>
+                                </div>
+                                <div className="w-px h-4 bg-gray-200"></div>
+                                <div className="flex items-center gap-1.5 min-w-[80px]">
+                                  <span className="w-2 h-2 rounded-full bg-pink-500"></span>
+                                  <span className="text-gray-600">Female:</span>
+                                  <span className="font-medium">{stats.female}</span>
+                                </div>
+                                {stats.notRecorded > 0 && (
+                                  <>
+                                    <div className="w-px h-4 bg-gray-200"></div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+                                      <span className="text-gray-600">Not recorded:</span>
+                                      <span className="font-medium">{stats.notRecorded}</span>
+                                    </div>
+                                  </>
+                                )}
+                            </div>
+                            
+                            {/* Visual Bar */}
+                            <div className="w-full bg-gray-100 rounded-full h-1.5 mt-2 overflow-hidden flex">
+                               {stats.male > 0 && <div style={{ width: `${(stats.male / stats.total) * 100}%` }} className="bg-blue-500 h-full" />}
+                               {stats.female > 0 && <div style={{ width: `${(stats.female / stats.total) * 100}%` }} className="bg-pink-500 h-full" />}
+                               {stats.notRecorded > 0 && <div style={{ width: `${(stats.notRecorded / stats.total) * 100}%` }} className="bg-gray-400 h-full" />}
+                            </div>
+                         </div>
+                       );
+                    })
+                 )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-8">
+                 <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            )}
           </CardContent>
         </Card>
 
