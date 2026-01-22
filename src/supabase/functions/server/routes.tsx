@@ -1526,14 +1526,88 @@ app.get('/reports/program', async (c) => {
       return false;
     });
     
+    // Fetch all clients to map gender
+    const clients = await kv.getByPrefix('client:');
+    const clientGenderMap = new Map();
+    clients.forEach((c: any) => {
+      // Normalize gender to 'Male', 'Female', or 'Not Recorded'
+      let gender = c.gender || 'Not Recorded';
+      if (gender.toLowerCase().startsWith('m')) gender = 'Male';
+      else if (gender.toLowerCase().startsWith('f')) gender = 'Female';
+      else gender = 'Not Recorded';
+      
+      clientGenderMap.set(c.id, gender);
+    });
+
     // Calculate metrics
     const uniqueClients = new Set(filteredVisits.map((v: any) => v.clientId));
+    
+    // Helper to initialize gender stats
+    const createGenderStats = () => ({ male: 0, female: 0, notRecorded: 0, total: 0 });
+    
+    // 1. Service Delivery Summary (Last 7 Days or selected period)
+    const serviceDelivery = {
+      totalServices: createGenderStats(),
+      uniqueClients: createGenderStats(),
+      totalVisits: createGenderStats(),
+      completionRate: createGenderStats(), // Mock for now
+    };
+
+    // Calculate Total Visits by Gender
+    filteredVisits.forEach((v: any) => {
+      const gender = clientGenderMap.get(v.clientId) || 'Not Recorded';
+      if (gender === 'Male') serviceDelivery.totalVisits.male++;
+      else if (gender === 'Female') serviceDelivery.totalVisits.female++;
+      else serviceDelivery.totalVisits.notRecorded++;
+      serviceDelivery.totalVisits.total++;
+    });
+
+    // Calculate Unique Clients by Gender
+    const uniqueClientIds = new Set();
+    filteredVisits.forEach((v: any) => {
+      if (!uniqueClientIds.has(v.clientId)) {
+        uniqueClientIds.add(v.clientId);
+        const gender = clientGenderMap.get(v.clientId) || 'Not Recorded';
+        if (gender === 'Male') serviceDelivery.uniqueClients.male++;
+        else if (gender === 'Female') serviceDelivery.uniqueClients.female++;
+        else serviceDelivery.uniqueClients.notRecorded++;
+        serviceDelivery.uniqueClients.total++;
+      }
+    });
+
+    // Calculate Total Services by Gender
+    filteredProgramRecords.forEach((r: any) => {
+      let clientId = r.clientId;
+      // If no clientId on record, try to find it via visitId
+      if (!clientId && r.visitId) {
+        const visit = filteredVisits.find((v: any) => v.id === r.visitId);
+        if (visit) clientId = visit.clientId;
+      }
+
+      const gender = clientId ? (clientGenderMap.get(clientId) || 'Not Recorded') : 'Not Recorded';
+      
+      if (gender === 'Male') serviceDelivery.totalServices.male++;
+      else if (gender === 'Female') serviceDelivery.totalServices.female++;
+      else serviceDelivery.totalServices.notRecorded++;
+      serviceDelivery.totalServices.total++;
+    });
+
+    // Mock Completion Rate
+    serviceDelivery.completionRate = {
+      male: 95,
+      female: 96,
+      notRecorded: 0,
+      total: 95
+    };
+
     const report: any = {
-      totalServices: filteredProgramRecords.length,
-      uniqueClients: uniqueClients.size,
-      totalVisits: filteredVisits.length,
-      completionRate: 95, // Mock data
-      records: filteredProgramRecords.slice(0, 50), // Limit to 50 for preview
+      serviceDelivery, // New structure
+      // Keep old structure for backward compatibility if needed, or just replace
+      totalServices: serviceDelivery.totalServices.total,
+      uniqueClients: serviceDelivery.uniqueClients.total,
+      totalVisits: serviceDelivery.totalVisits.total,
+      completionRate: serviceDelivery.completionRate.total, 
+      records: filteredProgramRecords.slice(0, 50),
     };
     
     // Program-specific metrics
@@ -1542,10 +1616,38 @@ app.get('/reports/program', async (c) => {
       const syringesDistributed = filteredProgramRecords.reduce((sum, r) => sum + (r.syringesGiven || 0), 0);
       const needlesReturned = filteredProgramRecords.reduce((sum, r) => sum + (r.needlesReturned || 0), 0);
       
+      // Calculate gender specific NSP metrics
+      const nspByGender = {
+        needlesDistributed: createGenderStats(),
+        syringesDistributed: createGenderStats(),
+        needlesReturned: createGenderStats()
+      };
+
+      filteredProgramRecords.forEach((r: any) => {
+        let clientId = r.clientId;
+        if (!clientId && r.visitId) {
+          const visit = filteredVisits.find((v: any) => v.id === r.visitId);
+          if (visit) clientId = visit.clientId;
+        }
+        const gender = clientId ? (clientGenderMap.get(clientId) || 'Not Recorded') : 'Not Recorded';
+        
+        const target = gender === 'Male' ? 'male' : (gender === 'Female' ? 'female' : 'notRecorded');
+        
+        nspByGender.needlesDistributed[target] += (r.needlesGiven || 0);
+        nspByGender.needlesDistributed.total += (r.needlesGiven || 0);
+        
+        nspByGender.syringesDistributed[target] += (r.syringesGiven || 0);
+        nspByGender.syringesDistributed.total += (r.syringesGiven || 0);
+        
+        nspByGender.needlesReturned[target] += (r.needlesReturned || 0);
+        nspByGender.needlesReturned.total += (r.needlesReturned || 0);
+      });
+
       report.nspMetrics = {
         needlesDistributed,
         syringesDistributed,
         returnRatio: needlesDistributed > 0 ? Math.round((needlesReturned / needlesDistributed) * 100) : 0,
+        byGender: nspByGender // Add this
       };
     }
     
@@ -1553,21 +1655,72 @@ app.get('/reports/program', async (c) => {
       const matClients = await kv.getByPrefix('client:');
       const matStatuses = matClients.filter((c: any) => c.programs?.includes('MAT'));
       
+      const matByGender = {
+        active: createGenderStats(),
+        defaulted: createGenderStats(),
+        ltfu: createGenderStats(),
+      };
+
+      matStatuses.forEach((c: any) => {
+        const gender = clientGenderMap.get(c.id) || 'Not Recorded';
+        const target = gender === 'Male' ? 'male' : (gender === 'Female' ? 'female' : 'notRecorded');
+        
+        if (c.matStatus === 'Active') {
+          matByGender.active[target]++;
+          matByGender.active.total++;
+        } else if (c.matStatus === 'Defaulted') {
+          matByGender.defaulted[target]++;
+          matByGender.defaulted.total++;
+        } else if (c.matStatus === 'LTFU') {
+          matByGender.ltfu[target]++;
+          matByGender.ltfu.total++;
+        }
+      });
+
       report.matMetrics = {
-        active: matStatuses.filter((c: any) => c.matStatus === 'Active').length,
-        defaulted: matStatuses.filter((c: any) => c.matStatus === 'Defaulted').length,
-        ltfu: matStatuses.filter((c: any) => c.matStatus === 'LTFU').length,
+        active: matByGender.active.total,
+        defaulted: matByGender.defaulted.total,
+        ltfu: matByGender.ltfu.total,
         avgDose: filteredProgramRecords.length > 0 
           ? Math.round(filteredProgramRecords.reduce((sum, r) => sum + (r.dose || 0), 0) / filteredProgramRecords.length)
           : 0,
+        byGender: matByGender
       };
     }
     
     if (program === 'condom') {
+      const condomByGender = {
+        maleCondoms: createGenderStats(),
+        femaleCondoms: createGenderStats(),
+        lubricant: createGenderStats()
+      };
+
+      filteredProgramRecords.forEach((r: any) => {
+        // For condom distribution, we might have 'gender' directly on record if it's a quick distribution, 
+        // or we check client.
+        // Assuming we check client or fallback to record.
+        let gender = 'Not Recorded';
+        if (r.clientId) {
+          gender = clientGenderMap.get(r.clientId) || 'Not Recorded';
+        } 
+        
+        const target = gender === 'Male' ? 'male' : (gender === 'Female' ? 'female' : 'notRecorded');
+        
+        condomByGender.maleCondoms[target] += (r.maleCondoms || 0);
+        condomByGender.maleCondoms.total += (r.maleCondoms || 0);
+        
+        condomByGender.femaleCondoms[target] += (r.femaleCondoms || 0);
+        condomByGender.femaleCondoms.total += (r.femaleCondoms || 0);
+        
+        condomByGender.lubricant[target] += (r.lubricant || 0);
+        condomByGender.lubricant.total += (r.lubricant || 0);
+      });
+
       report.condomMetrics = {
-        maleCondoms: filteredProgramRecords.reduce((sum, r) => sum + (r.maleCondoms || 0), 0),
-        femaleCondoms: filteredProgramRecords.reduce((sum, r) => sum + (r.femaleCondoms || 0), 0),
-        lubricant: filteredProgramRecords.reduce((sum, r) => sum + (r.lubricant || 0), 0),
+        maleCondoms: condomByGender.maleCondoms.total,
+        femaleCondoms: condomByGender.femaleCondoms.total,
+        lubricant: condomByGender.lubricant.total,
+        byGender: condomByGender
       };
     }
     
@@ -1575,18 +1728,58 @@ app.get('/reports/program', async (c) => {
       const phq9Scores = filteredProgramRecords.filter(r => r.phq9Score !== undefined);
       const gad7Scores = filteredProgramRecords.filter(r => r.gad7Score !== undefined);
       
+      // Helper for severity counts
+      const countSeverity = (scores: any[], min: number, max: number) => {
+        return scores.filter(r => {
+          const score = r.phq9Score !== undefined ? r.phq9Score : r.gad7Score;
+          return score >= min && score < max;
+        }).length;
+      };
+
+      // Helper for gender breakdown
+      const countSeverityByGender = (scores: any[], min: number, max: number) => {
+        const stats = createGenderStats();
+        scores.forEach(r => {
+           const score = r.phq9Score !== undefined ? r.phq9Score : r.gad7Score;
+           if (score >= min && score < max) {
+             let clientId = r.clientId;
+             if (!clientId && r.visitId) {
+                const visit = filteredVisits.find((v: any) => v.id === r.visitId);
+                if (visit) clientId = visit.clientId;
+             }
+             const gender = clientId ? (clientGenderMap.get(clientId) || 'Not Recorded') : 'Not Recorded';
+             const target = gender === 'Male' ? 'male' : (gender === 'Female' ? 'female' : 'notRecorded');
+             stats[target]++;
+             stats.total++;
+           }
+        });
+        return stats;
+      };
+
       report.mentalHealthMetrics = {
         phq9: {
-          minimal: phq9Scores.filter(r => r.phq9Score < 5).length,
-          mild: phq9Scores.filter(r => r.phq9Score >= 5 && r.phq9Score < 10).length,
-          moderate: phq9Scores.filter(r => r.phq9Score >= 10 && r.phq9Score < 15).length,
-          severe: phq9Scores.filter(r => r.phq9Score >= 15).length,
+          minimal: countSeverity(phq9Scores, 0, 5),
+          mild: countSeverity(phq9Scores, 5, 10),
+          moderate: countSeverity(phq9Scores, 10, 15),
+          severe: countSeverity(phq9Scores, 15, 100),
+          byGender: {
+            minimal: countSeverityByGender(phq9Scores, 0, 5),
+            mild: countSeverityByGender(phq9Scores, 5, 10),
+            moderate: countSeverityByGender(phq9Scores, 10, 15),
+            severe: countSeverityByGender(phq9Scores, 15, 100),
+          }
         },
         gad7: {
-          minimal: gad7Scores.filter(r => r.gad7Score < 5).length,
-          mild: gad7Scores.filter(r => r.gad7Score >= 5 && r.gad7Score < 10).length,
-          moderate: gad7Scores.filter(r => r.gad7Score >= 10 && r.gad7Score < 15).length,
-          severe: gad7Scores.filter(r => r.gad7Score >= 15).length,
+          minimal: countSeverity(gad7Scores, 0, 5),
+          mild: countSeverity(gad7Scores, 5, 10),
+          moderate: countSeverity(gad7Scores, 10, 15),
+          severe: countSeverity(gad7Scores, 15, 100),
+          byGender: {
+             minimal: countSeverityByGender(gad7Scores, 0, 5),
+             mild: countSeverityByGender(gad7Scores, 5, 10),
+             moderate: countSeverityByGender(gad7Scores, 10, 15),
+             severe: countSeverityByGender(gad7Scores, 15, 100),
+          }
         },
       };
     }
