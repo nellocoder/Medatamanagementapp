@@ -49,6 +49,30 @@ export function MentalHealthModule({ visit, client, currentUser, canEdit, onUpda
   const [phq9Scores, setPHQ9Scores] = useState<number[]>(Array(9).fill(0));
   const [gad7Scores, setGAD7Scores] = useState<number[]>(Array(7).fill(0));
 
+  const [records, setRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadRecords();
+  }, [visit.id]);
+
+  const loadRecords = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/mental-health/${visit.id}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      const data = await response.json();
+      if (data.success) {
+        setRecords(data.records || []);
+      }
+    } catch (error) {
+      console.error('Error loading mental health records:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const calculatePHQ9 = () => {
     const total = phq9Scores.reduce((a, b) => a + b, 0);
     let severity = '';
@@ -117,6 +141,7 @@ export function MentalHealthModule({ visit, client, currentUser, canEdit, onUpda
         }
         setIsPHQ9Open(false);
         setPHQ9Scores(Array(9).fill(0));
+        loadRecords();
         onUpdate();
       } else {
         toast.error(data.error || 'Failed to save PHQ-9');
@@ -167,6 +192,7 @@ export function MentalHealthModule({ visit, client, currentUser, canEdit, onUpda
         }
         setIsGAD7Open(false);
         setGAD7Scores(Array(7).fill(0));
+        loadRecords();
         onUpdate();
       } else {
         toast.error(data.error || 'Failed to save GAD-7');
@@ -207,6 +233,7 @@ export function MentalHealthModule({ visit, client, currentUser, canEdit, onUpda
       if (data.success) {
         toast.success('Mental health record saved successfully');
         setIsOtherOpen(false);
+        loadRecords();
         onUpdate();
       } else {
         toast.error(data.error || 'Failed to save record');
@@ -452,15 +479,66 @@ export function MentalHealthModule({ visit, client, currentUser, canEdit, onUpda
         )}
       </div>
 
-      <Card>
-        <CardContent className="py-12 text-center text-gray-500">
-          <Brain className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-          <p>No mental health services recorded for this visit yet.</p>
-          {canEdit && (
-            <p className="text-sm mt-2">Use the buttons above to add PHQ-9, GAD-7, or other mental health services.</p>
-          )}
-        </CardContent>
-      </Card>
+      <div className="space-y-4 mt-6">
+        {records.length > 0 ? (
+          records.map((record, idx) => (
+            <Card key={idx}>
+              <CardContent className="p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-medium text-lg">{record.type}</h4>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {record.phq9Score !== undefined && (
+                        <Badge className={
+                          record.phq9Severity === 'Severe' || record.phq9Severity === 'Moderately Severe' ? 'bg-red-100 text-red-800' :
+                          record.phq9Severity === 'Moderate' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }>
+                          PHQ-9 Score: {record.phq9Score} ({record.phq9Severity})
+                        </Badge>
+                      )}
+                      {record.gad7Score !== undefined && (
+                        <Badge className={
+                          record.gad7Severity === 'Severe' ? 'bg-red-100 text-red-800' :
+                          record.gad7Severity === 'Moderate' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-green-100 text-green-800'
+                        }>
+                          GAD-7 Score: {record.gad7Score} ({record.gad7Severity})
+                        </Badge>
+                      )}
+                    </div>
+                    {record.suicidalThought && (
+                      <div className="mt-2 flex items-center text-red-600 text-sm font-medium">
+                        <AlertTriangle className="w-4 h-4 mr-1" />
+                        Suicidal thoughts reported
+                      </div>
+                    )}
+                    {record.notes && (
+                      <p className="mt-2 text-gray-600 text-sm bg-gray-50 p-2 rounded">
+                        {record.notes}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-2">
+                      Recorded by {record.provider} on {new Date(record.date || record.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  {/* Edit button could go here */}
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              <Brain className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p>No mental health services recorded for this visit yet.</p>
+              {canEdit && (
+                <p className="text-sm mt-2">Use the buttons above to add PHQ-9, GAD-7, or other mental health services.</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { getRolePermissions } from './utils/permissions';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentView, setCurrentView] = useState('dashboard');
+  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
   const initialized = useInitializeData();
 
   useEffect(() => {
@@ -47,6 +48,24 @@ export default function App() {
     setCurrentView('dashboard');
   };
 
+  const handleNavigateToVisit = (visitId: string) => {
+    setSelectedVisitId(visitId);
+    setCurrentView('visits');
+  };
+
+  const handleNavigateToVisits = () => {
+    setCurrentView('visits');
+    setSelectedVisitId(null);
+  };
+
+  const handleViewChange = (view: string) => {
+    setCurrentView(view);
+    // Clear selected visit when navigating via sidebar to show the list
+    if (view === 'visits') {
+      setSelectedVisitId(null);
+    }
+  };
+
   if (!currentUser) {
     return (
       <>
@@ -60,15 +79,26 @@ export default function App() {
     <div className="flex h-screen bg-gray-50">
       <Sidebar 
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={handleViewChange}
         currentUser={currentUser}
         onLogout={handleLogout}
       />
       
       <div className="flex-1 overflow-auto">
-        {currentView === 'dashboard' && <Dashboard currentUser={currentUser} />}
+        {currentView === 'dashboard' && (
+          <Dashboard 
+            currentUser={currentUser} 
+            onNavigateToVisit={handleNavigateToVisit}
+            onNavigateToVisits={handleNavigateToVisits}
+          />
+        )}
         {currentView === 'clients' && <ClientManagement currentUser={currentUser} />}
-        {currentView === 'visits' && <VisitManagement currentUser={currentUser} />}
+        {currentView === 'visits' && (
+          <VisitManagement 
+            currentUser={currentUser} 
+            initialVisitId={selectedVisitId}
+          />
+        )}
         {currentView === 'users' && <UserManagement currentUser={currentUser} />}
         {currentView === 'admin' && <AdminPanel currentUser={currentUser} />}
         {currentView === 'audit' && <AuditLog currentUser={currentUser} />}

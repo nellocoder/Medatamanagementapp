@@ -123,7 +123,7 @@ export function VisitSummary({ visit, client, currentUser }: VisitSummaryProps) 
             </div>
           )}
 
-          {visit.servicesProvided && (
+          {visit.servicesProvided && typeof visit.servicesProvided === 'string' && (
             <div>
               <p className="text-sm text-gray-600 mb-2">Services Provided</p>
               <div className="flex flex-wrap gap-2">

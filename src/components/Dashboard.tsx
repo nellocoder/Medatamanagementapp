@@ -49,6 +49,8 @@ import { VisitDetail } from './VisitDetail';
 
 interface DashboardProps {
   currentUser: any;
+  onNavigateToVisit: (visitId: string) => void;
+  onNavigateToVisits: () => void;
 }
 
 const COLORS = {
@@ -63,7 +65,7 @@ const COLORS = {
 
 const PROGRAM_COLORS = ['#4f46e5', '#06b6d4', '#8b5cf6', '#ec4899'];
 
-export function Dashboard({ currentUser }: DashboardProps) {
+export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }: DashboardProps) {
   // State for Data
   const [metrics, setMetrics] = useState<any>(null);
   const [recentVisits, setRecentVisits] = useState<any[]>([]);
@@ -141,8 +143,7 @@ export function Dashboard({ currentUser }: DashboardProps) {
   };
 
   const handleViewVisitDetail = async (visitId: string) => {
-    // ... (Keep existing logic, it works fine) ...
-    toast.info("View detail functionality preserved");
+    onNavigateToVisit(visitId);
   };
 
   if (loading || !metrics) {
@@ -340,14 +341,14 @@ export function Dashboard({ currentUser }: DashboardProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Clients by Location */}
-        <Card className="rounded-2xl shadow-sm border-0 bg-white">
+        <Card className="rounded-2xl shadow-sm border-0 bg-white min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Clients by Location</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Added style wrapper to fix width(-1) error */}
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[300px] w-full" style={{ minWidth: '1px' }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={100}>
                 <BarChart data={locationData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" />
@@ -361,14 +362,14 @@ export function Dashboard({ currentUser }: DashboardProps) {
         </Card>
 
         {/* Age Groups */}
-        <Card className="rounded-2xl shadow-sm border-0 bg-white">
+        <Card className="rounded-2xl shadow-sm border-0 bg-white min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle>Age Demographics</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Added style wrapper to fix width(-1) error */}
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[300px] w-full" style={{ minWidth: '1px' }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={100}>
                 <PieChart>
                   <Pie
                     data={ageData}
@@ -449,7 +450,7 @@ export function Dashboard({ currentUser }: DashboardProps) {
 
       <DailyVisitsTable 
         currentUser={currentUser} 
-        onNavigateToVisits={() => {}} 
+        onNavigateToVisits={onNavigateToVisits} 
         onViewVisitDetail={handleViewVisitDetail} 
       />
 

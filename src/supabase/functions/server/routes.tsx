@@ -297,6 +297,43 @@ app.get('/visits', async (c) => {
   }
 });
 
+// Update visit
+app.put('/visits/:id', async (c) => {
+  try {
+    const visitId = c.req.param('id');
+    const { updates, userId } = await c.req.json();
+    
+    // Check if visit exists
+    const existingVisit = await kv.get(`visit:${visitId}`);
+    if (!existingVisit) {
+      return c.json({ success: false, error: 'Visit not found' }, 404);
+    }
+    
+    // Update visit
+    const updatedVisit = {
+      ...existingVisit,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+      updatedBy: userId,
+    };
+    
+    await kv.set(`visit:${visitId}`, updatedVisit);
+    
+    // Log audit
+    await kv.set(`audit:${Date.now()}`, {
+      action: 'visit_updated',
+      userId,
+      timestamp: new Date().toISOString(),
+      details: { visitId, updates },
+    });
+    
+    return c.json({ success: true, visit: updatedVisit });
+  } catch (error) {
+    console.error('Error updating visit:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
 // Add mental health record
 app.post('/mental-health', async (c) => {
   try {
@@ -1177,11 +1214,12 @@ app.post('/clinical-results', async (c) => {
     }
     
     if (result.type === 'mental-health') {
-      if (result.phq9Score && parseInt(result.phq9Score) >= 15) {
-        flags.push({ type: 'high-phq9', severity: 'high', date: timestamp });
+      // Flag moderate (10+) and above
+      if (result.phq9Score && parseInt(result.phq9Score) >= 10) {
+        flags.push({ type: 'high-phq9', severity: 'high', date: timestamp, score: result.phq9Score });
       }
-      if (result.gad7Score && parseInt(result.gad7Score) >= 15) {
-        flags.push({ type: 'high-gad7', severity: 'high', date: timestamp });
+      if (result.gad7Score && parseInt(result.gad7Score) >= 10) {
+        flags.push({ type: 'high-gad7', severity: 'high', date: timestamp, score: result.gad7Score });
       }
     }
     

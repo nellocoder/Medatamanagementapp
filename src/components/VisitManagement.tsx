@@ -28,13 +28,16 @@ import {
   TestTube,
   Heart,
   Save,
-  X
+  X,
+  Edit2
 } from 'lucide-react';
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
 import { VisitDetail } from './VisitDetail';
+import { PHQ9Form, GAD7Form } from './MentalHealthForms';
 
 interface VisitManagementProps {
   currentUser: any;
+  initialVisitId?: string | null;
 }
 
 // Available services list
@@ -93,7 +96,7 @@ const AVAILABLE_SERVICES = [
   { category: 'Education', name: 'Educational Support' },
 ];
 
-export function VisitManagement({ currentUser }: VisitManagementProps) {
+export function VisitManagement({ currentUser, initialVisitId }: VisitManagementProps) {
   const [visits, setVisits] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [filteredVisits, setFilteredVisits] = useState<any[]>([]);
@@ -101,13 +104,23 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedVisit, setSelectedVisit] = useState<any>(null);
   const [viewingVisit, setViewingVisit] = useState<any>(null);
+  // Track processed initial ID to prevent re-opening on updates
+  const [processedInitialId, setProcessedInitialId] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   
   // Dialog states
   const [isAddVisitOpen, setIsAddVisitOpen] = useState(false);
+  const [isEditVisitOpen, setIsEditVisitOpen] = useState(false);
+  const [editingVisit, setEditingVisit] = useState<any>(null);
   const [isAddResultOpen, setIsAddResultOpen] = useState(false);
   const [isAddInterventionOpen, setIsAddInterventionOpen] = useState(false);
+  
+  // Mental Health Form State
+  const [phq9Data, setPhq9Data] = useState<any>(null);
+  const [gad7Data, setGad7Data] = useState<any>(null);
+  const [showPHQ9, setShowPHQ9] = useState(false);
+  const [showGAD7, setShowGAD7] = useState(false);
 
   const canEdit = hasPermission(currentUser?.permissions || [], PERMISSIONS.VISIT_CREATE);
 
@@ -118,6 +131,42 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
   useEffect(() => {
     filterVisits();
   }, [visits, searchTerm]);
+
+  // Handle initial visit selection
+  useEffect(() => {
+    if (initialVisitId && initialVisitId !== processedInitialId) {
+      // First try to find in loaded visits
+      const visit = visits.find(v => v.id === initialVisitId);
+      if (visit) {
+        setViewingVisit(visit);
+        setProcessedInitialId(initialVisitId);
+      } else if (!loading) {
+        // If not found in list and loading is done, try to fetch specific visit
+        fetchSingleVisit(initialVisitId);
+      }
+    }
+  }, [initialVisitId, visits, loading, processedInitialId]);
+
+  const fetchSingleVisit = async (id: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/visits/${id}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      const data = await response.json();
+      if (data.success && data.visit) {
+        setViewingVisit(data.visit);
+        setProcessedInitialId(id);
+      } else {
+        toast.error('Could not find the requested visit');
+      }
+    } catch (error) {
+      console.error('Error fetching single visit:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -177,6 +226,52 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
 
   const getClientInfo = (clientId: string) => {
     return clients.find(c => c.id === clientId);
+  };
+
+  const handleEditVisit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingVisit) return;
+    
+    const formData = new FormData(e.currentTarget);
+    
+    const visitUpdates = {
+      visitDate: formData.get('visitDate'),
+      visitType: formData.get('visitType'),
+      location: formData.get('location'),
+      reason: formData.get('reason'),
+      notes: formData.get('notes'),
+      servicesProvided: selectedServices.join(', '),
+      followUpRequired: formData.get('followUpRequired') === 'true',
+      nextAppointment: formData.get('nextAppointment'),
+    };
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/visits/${editingVisit.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ updates: visitUpdates, userId: currentUser.id }),
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Visit updated successfully!');
+        setIsEditVisitOpen(false);
+        setEditingVisit(null);
+        setSelectedServices([]);
+        loadData();
+      } else {
+        toast.error(data.error || 'Failed to update visit');
+      }
+    } catch (error) {
+      console.error('Error updating visit:', error);
+      toast.error('Network error. Please try again.');
+    }
   };
 
   const handleAddVisit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -243,8 +338,16 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
       hepC: formData.get('hepC'),
       tbScreening: formData.get('tbScreening'),
       // Mental health
-      phq9Score: formData.get('phq9Score'),
-      gad7Score: formData.get('gad7Score'),
+      phq9Score: phq9Data?.score,
+      phq9Severity: phq9Data?.severity,
+      phq9Classification: phq9Data?.classification,
+      phq9Responses: phq9Data?.responses,
+      
+      gad7Score: gad7Data?.score,
+      gad7Severity: gad7Data?.severity,
+      gad7Classification: gad7Data?.classification,
+      gad7Responses: gad7Data?.responses,
+      
       notes: formData.get('notes'),
     };
 
@@ -694,6 +797,10 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
                             onClick={() => {
                               setSelectedVisit(visit);
                               setIsAddResultOpen(true);
+                              setPhq9Data(null);
+                              setGad7Data(null);
+                              setShowPHQ9(false);
+                              setShowGAD7(false);
                             }}
                             title="Add clinical result"
                           >
@@ -710,6 +817,20 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
                           >
                             <Heart className="w-4 h-4" />
                           </Button>
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditingVisit(visit);
+                                setSelectedServices(visit.servicesProvided ? visit.servicesProvided.split(', ') : []);
+                                setIsEditVisitOpen(true);
+                              }}
+                              title="Edit visit details"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -720,6 +841,164 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Visit Dialog */}
+      <Dialog open={isEditVisitOpen} onOpenChange={(open) => {
+        setIsEditVisitOpen(open);
+        if (!open) {
+          setEditingVisit(null);
+          setSelectedServices([]);
+        }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Visit Details</DialogTitle>
+            <DialogDescription>
+              Update visit information for {editingVisit && getClientName(editingVisit.clientId)}
+            </DialogDescription>
+          </DialogHeader>
+          {editingVisit && (
+            <form onSubmit={handleEditVisit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="visitDate">Visit Date *</Label>
+                  <Input 
+                    id="visitDate" 
+                    name="visitDate" 
+                    type="date" 
+                    defaultValue={editingVisit.visitDate ? new Date(editingVisit.visitDate).toISOString().split('T')[0] : ''}
+                    required 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="visitType">Visit Type *</Label>
+                  <Select name="visitType" defaultValue={editingVisit.visitType} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Clinical Review">Clinical Review</SelectItem>
+                      <SelectItem value="Outreach Visit">Outreach Visit</SelectItem>
+                      <SelectItem value="Case Management">Case Management</SelectItem>
+                      <SelectItem value="Psychosocial Session">Psychosocial Session</SelectItem>
+                      <SelectItem value="Follow-up">Follow-up</SelectItem>
+                      <SelectItem value="Emergency">Emergency</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="location">Location *</Label>
+                <Select name="location" defaultValue={editingVisit.location} required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Clinic">Clinic</SelectItem>
+                    <SelectItem value="Community">Community</SelectItem>
+                    <SelectItem value="Home Visit">Home Visit</SelectItem>
+                    <SelectItem value="Outreach">Outreach</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reason">Reason for Visit</Label>
+                <Input id="reason" name="reason" defaultValue={editingVisit.reason || ''} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes & Observations</Label>
+                <Textarea id="notes" name="notes" rows={3} defaultValue={editingVisit.notes || ''} />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Services Provided *</Label>
+                <div className="border rounded-lg p-4 max-h-60 overflow-y-auto space-y-3">
+                  {Object.entries(
+                    AVAILABLE_SERVICES.reduce((acc, service) => {
+                      if (!acc[service.category]) acc[service.category] = [];
+                      acc[service.category].push(service.name);
+                      return acc;
+                    }, {} as Record<string, string[]>)
+                  ).map(([category, services]) => (
+                    <div key={category}>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">{category}</h4>
+                      <div className="space-y-1.5">
+                        {services.map((serviceName) => (
+                          <div key={serviceName} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`edit-${serviceName}`}
+                              checked={selectedServices.includes(serviceName)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedServices([...selectedServices, serviceName]);
+                                } else {
+                                  setSelectedServices(selectedServices.filter((s) => s !== serviceName));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor={`edit-${serviceName}`}
+                              className="text-sm cursor-pointer select-none"
+                            >
+                              {serviceName}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {selectedServices.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {selectedServices.map((service) => (
+                      <Badge key={service} variant="secondary" className="text-xs">
+                        {service}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="followUpRequired">Follow-up Required?</Label>
+                  <Select name="followUpRequired" defaultValue={editingVisit.followUpRequired ? 'true' : 'false'}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">Yes</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="nextAppointment">Next Appointment</Label>
+                  <Input 
+                    id="nextAppointment" 
+                    name="nextAppointment" 
+                    type="date" 
+                    defaultValue={editingVisit.nextAppointment ? new Date(editingVisit.nextAppointment).toISOString().split('T')[0] : ''}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsEditVisitOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  <Save className="w-4 h-4 mr-2" />
+                  Update Visit
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Add Clinical Result Dialog */}
       <Dialog open={isAddResultOpen} onOpenChange={setIsAddResultOpen}>
@@ -832,14 +1111,73 @@ export function VisitManagement({ currentUser }: VisitManagementProps) {
 
             <div className="border-t pt-4">
               <h4 className="font-medium mb-3">Mental Health Screening</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phq9Score">PHQ-9 Score (0-27)</Label>
-                  <Input id="phq9Score" name="phq9Score" type="number" min="0" max="27" />
+              
+              <div className="space-y-4">
+                {/* PHQ-9 Section */}
+                <div className="bg-gray-50 p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-4">
+                    <Label className="font-medium">PHQ-9 Depression Assessment</Label>
+                    <Button 
+                      type="button" 
+                      variant={showPHQ9 ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => setShowPHQ9(!showPHQ9)}
+                    >
+                      {showPHQ9 ? 'Hide Assessment' : phq9Data ? 'Edit Assessment' : 'Start Assessment'}
+                    </Button>
+                  </div>
+                  
+                  {showPHQ9 ? (
+                    <PHQ9Form onChange={setPhq9Data} initialData={phq9Data} />
+                  ) : phq9Data ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge className={
+                        phq9Data.score <= 4 ? "bg-green-100 text-green-800" :
+                        phq9Data.score <= 9 ? "bg-blue-100 text-blue-800" :
+                        phq9Data.score <= 14 ? "bg-yellow-100 text-yellow-800" :
+                        phq9Data.score <= 19 ? "bg-orange-100 text-orange-800" :
+                        "bg-red-100 text-red-800"
+                      }>
+                        Score: {phq9Data.score}
+                      </Badge>
+                      <span className="font-medium">{phq9Data.classification}</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No assessment recorded</p>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="gad7Score">GAD-7 Score (0-21)</Label>
-                  <Input id="gad7Score" name="gad7Score" type="number" min="0" max="21" />
+
+                {/* GAD-7 Section */}
+                <div className="bg-gray-50 p-4 rounded-lg border">
+                  <div className="flex items-center justify-between mb-4">
+                    <Label className="font-medium">GAD-7 Anxiety Assessment</Label>
+                    <Button 
+                      type="button" 
+                      variant={showGAD7 ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => setShowGAD7(!showGAD7)}
+                    >
+                      {showGAD7 ? 'Hide Assessment' : gad7Data ? 'Edit Assessment' : 'Start Assessment'}
+                    </Button>
+                  </div>
+                  
+                  {showGAD7 ? (
+                    <GAD7Form onChange={setGad7Data} initialData={gad7Data} />
+                  ) : gad7Data ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge className={
+                        gad7Data.score <= 4 ? "bg-green-100 text-green-800" :
+                        gad7Data.score <= 9 ? "bg-blue-100 text-blue-800" :
+                        gad7Data.score <= 14 ? "bg-yellow-100 text-yellow-800" :
+                        "bg-red-100 text-red-800"
+                      }>
+                        Score: {gad7Data.score}
+                      </Badge>
+                      <span className="font-medium">{gad7Data.classification}</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No assessment recorded</p>
+                  )}
                 </div>
               </div>
             </div>

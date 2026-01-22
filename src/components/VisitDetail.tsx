@@ -161,7 +161,7 @@ export function VisitDetail({ visit, client, onBack, currentUser, onUpdate }: Vi
                       : 'bg-blue-100 text-blue-800 border-blue-300'
                   }
                 >
-                  {flag.type.replace(/-/g, ' ').toUpperCase()}
+                  {(flag.type?.replace(/-/g, ' ') || 'Unknown Risk').toUpperCase()}
                 </Badge>
               ))}
             </div>

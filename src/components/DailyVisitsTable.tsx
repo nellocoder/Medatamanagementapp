@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { 
   Calendar,
   MapPin,
@@ -44,6 +45,13 @@ interface VisitWithServices {
     provider: string;
     providerId: string;
     time: string;
+    // New fields for details
+    result?: string;
+    severity?: string;
+    score?: string;
+    classification?: string;
+    isSensitive?: boolean;
+    hidden?: boolean;
   }>;
   hasRiskFlags?: boolean;
 }
@@ -54,10 +62,14 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
   const [users, setUsers] = useState<any[]>([]);
+  const [viewingServicesVisit, setViewingServicesVisit] = useState<VisitWithServices | null>(null);
 
   // Role-based access control
-  const canViewFullDetails = ['Admin', 'Clinician', 'HTS Counselor', 'Psychologist', 'Counselor', 
+  const canViewFullDetails = ['Admin', 'Clinician', 'HTS Counsellor', 'Psychologist', 'Counselor', 
     'Nurse', 'Program Manager', 'Program Coordinator', 'M&E Officer', 'Data Entry'].includes(currentUser.role);
+    
+  // Sensitive Data Access (HIV, etc.)
+  const canViewSensitiveResults = ['Admin', 'Clinician', 'HTS Counsellor', 'Counselor', 'Nurse', 'Program Manager'].includes(currentUser.role);
   
   const isOutreachWorker = currentUser.role === 'Outreach Worker';
   const isParalegal = currentUser.role === 'Paralegal';
@@ -211,12 +223,32 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
               if (clinicalData.success && clinicalData.records.length > 0) {
                 clinicalData.records.forEach((record: any) => {
                   const provider = users.find(u => u.id === record.providedBy || u.id === record.createdBy);
-                  services.push({
-                    type: 'clinical',
-                    provider: provider ? provider.name : 'Unknown',
-                    providerId: record.providedBy || record.createdBy,
-                    time: record.providedAt || record.createdAt,
-                  });
+                  
+                  if (record.type === 'vitals') {
+                     services.push({
+                      type: 'Vitals Check',
+                      provider: provider ? provider.name : 'Unknown',
+                      providerId: record.providedBy || record.createdBy,
+                      time: record.providedAt || record.createdAt,
+                      result: `BP: ${record.bloodPressure || '-'}, Temp: ${record.temperature || '-'}`,
+                    });
+                  } else if (record.type === 'lab' && record.hivTest) {
+                     services.push({
+                      type: 'HIV Testing',
+                      provider: provider ? provider.name : 'Unknown',
+                      providerId: record.providedBy || record.createdBy,
+                      time: record.providedAt || record.createdAt,
+                      result: record.hivTest,
+                      isSensitive: true,
+                    });
+                  } else {
+                     services.push({
+                      type: record.type === 'lab' ? 'Lab Results' : 'Clinical Care',
+                      provider: provider ? provider.name : 'Unknown',
+                      providerId: record.providedBy || record.createdBy,
+                      time: record.providedAt || record.createdAt,
+                    });
+                  }
                 });
               }
             }
@@ -232,10 +264,11 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
                 matData.records.forEach((record: any) => {
                   const provider = users.find(u => u.id === record.providedBy || u.id === record.createdBy);
                   services.push({
-                    type: 'mat',
+                    type: 'Methadone Dose',
                     provider: provider ? provider.name : 'Unknown',
                     providerId: record.providedBy || record.createdBy,
                     time: record.dosingDate || record.createdAt,
+                    result: record.dose ? `${record.dose} mg` : undefined
                   });
                 });
               }
@@ -252,10 +285,11 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
                 nspData.records.forEach((record: any) => {
                   const provider = users.find(u => u.id === record.providedBy || u.id === record.createdBy);
                   services.push({
-                    type: 'nsp',
+                    type: 'NSP Distribution',
                     provider: provider ? provider.name : 'Unknown',
                     providerId: record.providedBy || record.createdBy,
                     time: record.distributionDate || record.createdAt,
+                    result: record.items ? Object.entries(record.items).map(([k,v]) => `${k}: ${v}`).join(', ') : undefined
                   });
                 });
               }
@@ -271,12 +305,42 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
               if (mhData.success && mhData.records.length > 0) {
                 mhData.records.forEach((record: any) => {
                   const provider = users.find(u => u.id === record.assessedBy || u.id === record.createdBy);
-                  services.push({
-                    type: 'mental-health',
-                    provider: provider ? provider.name : 'Unknown',
-                    providerId: record.assessedBy || record.createdBy,
-                    time: record.assessmentDate || record.createdAt,
-                  });
+                  
+                  // Add PHQ-9 if present
+                  if (record.phq9Score !== undefined && record.phq9Score !== null) {
+                    services.push({
+                      type: 'PHQ-9 Screening',
+                      provider: provider ? provider.name : 'Unknown',
+                      providerId: record.assessedBy || record.createdBy,
+                      time: record.assessmentDate || record.createdAt,
+                      score: record.phq9Score,
+                      severity: record.phq9Severity,
+                      classification: record.phq9Classification,
+                    });
+                  }
+                  
+                  // Add GAD-7 if present
+                  if (record.gad7Score !== undefined && record.gad7Score !== null) {
+                    services.push({
+                      type: 'GAD-7 Screening',
+                      provider: provider ? provider.name : 'Unknown',
+                      providerId: record.assessedBy || record.createdBy,
+                      time: record.assessmentDate || record.createdAt,
+                      score: record.gad7Score,
+                      severity: record.gad7Severity,
+                      classification: record.gad7Classification,
+                    });
+                  }
+                  
+                  // Fallback if neither specific score is found but record exists
+                  if (!record.phq9Score && !record.gad7Score) {
+                     services.push({
+                      type: 'Mental Health Assessment',
+                      provider: provider ? provider.name : 'Unknown',
+                      providerId: record.assessedBy || record.createdBy,
+                      time: record.assessmentDate || record.createdAt,
+                    });
+                  }
                 });
               }
             }
@@ -322,6 +386,30 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
             }
           } catch (error) {
             console.error('Error fetching services for visit:', visit.id, error);
+          }
+
+          // Check for services in the visit.servicesProvided string (comma separated)
+          if (visit.servicesProvided) {
+            const stringServices = visit.servicesProvided.split(', ').filter((s: string) => s.trim().length > 0);
+            stringServices.forEach((serviceName: string) => {
+              // Normalize service name for comparison
+              const normalizedName = serviceName.toLowerCase().replace(/[\s-]/g, '');
+              
+              // Check if this service is already represented by an API record
+              const alreadyExists = services.some(s => {
+                const sName = s.type.toLowerCase().replace(/[\s-]/g, '');
+                return sName.includes(normalizedName) || normalizedName.includes(sName);
+              });
+              
+              if (!alreadyExists) {
+                services.push({
+                  type: serviceName,
+                  provider: users.find(u => u.id === visit.userId)?.name || 'Unknown', // Fallback to visit creator
+                  providerId: visit.userId,
+                  time: visit.visitDate || visit.createdAt,
+                });
+              }
+            });
           }
 
           // Determine visit status
@@ -391,6 +479,11 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
     } else if (!canViewFullDetails) {
       toast.error('You do not have permission to view visit details');
     }
+  };
+
+  const handleServiceClick = (e: React.MouseEvent, visit: VisitWithServices) => {
+    e.stopPropagation(); // Prevent row click
+    setViewingServicesVisit(visit);
   };
 
   const getStatusIcon = (status: string) => {
@@ -524,14 +617,14 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
                     </td>
 
                     {/* Services */}
-                    <td className="py-3 px-4">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="py-3 px-4" onClick={(e) => handleServiceClick(e, visit)}>
+                      <div className="flex flex-wrap gap-1 cursor-pointer hover:bg-gray-100 p-1 rounded -ml-1 transition-colors">
                         {visit.services.length === 0 ? (
                           <Badge variant="outline" className="text-xs">
                             No services
                           </Badge>
                         ) : (
-                          visit.services.map((service, idx) => {
+                          visit.services.slice(0, 3).map((service, idx) => {
                             const Icon = serviceIcons[service.type] || Activity;
                             const colorClass = serviceColors[service.type] || 'bg-gray-100 text-gray-700';
                             
@@ -550,6 +643,11 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
                               </Badge>
                             );
                           })
+                        )}
+                        {visit.services.length > 3 && (
+                          <Badge variant="secondary" className="text-xs">
+                            +{visit.services.length - 3} more
+                          </Badge>
                         )}
                       </div>
                     </td>
@@ -605,6 +703,90 @@ export function DailyVisitsTable({ currentUser, onNavigateToVisits, onViewVisitD
           </div>
         )}
       </CardContent>
+
+      {/* Services Detail Dialog */}
+      <Dialog open={!!viewingServicesVisit} onOpenChange={(open) => !open && setViewingServicesVisit(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Services Provided</DialogTitle>
+            <DialogDescription>
+              Detailed list of services for {viewingServicesVisit?.clientName} on {viewingServicesVisit && new Date(viewingServicesVisit.visitDate).toLocaleDateString()}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="mt-4">
+            {viewingServicesVisit?.services && viewingServicesVisit.services.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Service</th>
+                      <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Category</th>
+                      <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Time</th>
+                      <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Provider</th>
+                      <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Details/Result</th>
+                      <th className="text-left py-2 px-4 text-xs font-medium text-gray-500 uppercase">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {viewingServicesVisit.services.map((service, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="py-2 px-4 text-sm font-medium">
+                          {service.type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </td>
+                        <td className="py-2 px-4 text-sm text-gray-500">
+                          {service.type === 'Clinical Care' || service.type === 'Vitals Check' || service.type === 'Lab Results' || service.type === 'HIV Testing' ? 'Clinical Care' :
+                           service.type === 'Methadone Dose' ? 'MAT Program' :
+                           service.type === 'NSP Distribution' ? 'Harm Reduction' :
+                           service.type === 'PHQ-9 Screening' || service.type === 'GAD-7 Screening' || service.type === 'Mental Health Assessment' ? 'Mental Health' :
+                           service.type === 'psychosocial' ? 'Psychosocial Support' :
+                           'General Support'}
+                        </td>
+                        <td className="py-2 px-4 text-sm text-gray-500">
+                          {formatTime(service.time)}
+                        </td>
+                        <td className="py-2 px-4 text-sm text-gray-500">
+                          {service.provider}
+                        </td>
+                        <td className="py-2 px-4 text-sm text-gray-700">
+                          {service.isSensitive && !canViewSensitiveResults ? (
+                            <span className="text-gray-400 italic flex items-center gap-1">
+                              <Shield className="w-3 h-3" /> Confidential
+                            </span>
+                          ) : service.classification ? (
+                            <div className="flex flex-col">
+                              <span className="font-medium">{service.classification}</span>
+                              {service.score && <span className="text-xs text-gray-500">Score: {service.score}</span>}
+                            </div>
+                          ) : service.result ? (
+                             <span>{service.result}</span>
+                          ) : (
+                             <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-4">
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
+                            Completed
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+                <Activity className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                <p>No services recorded for this visit.</p>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end mt-4">
+            <Button onClick={() => setViewingServicesVisit(null)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
