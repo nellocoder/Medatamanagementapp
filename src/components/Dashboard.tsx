@@ -146,7 +146,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
     onNavigateToVisit(visitId);
   };
 
-  if (loading || !metrics) {
+  if (loading) {
     return (
       <div className="p-4 md:p-8 space-y-6 bg-gray-50 min-h-screen">
         <div className="space-y-2">
@@ -157,6 +157,22 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
           {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}
         </div>
         <Skeleton className="h-96 w-full rounded-2xl" />
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div className="p-4 md:p-8 flex flex-col items-center justify-center min-h-screen bg-gray-50 space-y-4">
+        <div className="p-6 bg-white rounded-2xl shadow-sm text-center max-w-md">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Failed to load dashboard</h2>
+          <p className="text-gray-600 mb-6">There was a problem connecting to the server. Please check your internet connection and try again.</p>
+          <Button onClick={loadDashboardData}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry Connection
+          </Button>
+        </div>
       </div>
     );
   }
@@ -348,7 +364,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
           <CardContent>
             {/* Added style wrapper to fix width(-1) error */}
             <div className="h-[300px] w-full" style={{ minWidth: '1px' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={100}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                 <BarChart data={locationData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" />
@@ -369,7 +385,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
           <CardContent>
             {/* Added style wrapper to fix width(-1) error */}
             <div className="h-[300px] w-full" style={{ minWidth: '1px' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={100}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                 <PieChart>
                   <Pie
                     data={ageData}
