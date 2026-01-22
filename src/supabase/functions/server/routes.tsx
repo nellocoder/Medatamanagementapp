@@ -59,10 +59,13 @@ app.get('/clients', async (c) => {
     const program = c.req.query('program');
     const search = c.req.query('search')?.toLowerCase();
     const page = parseInt(c.req.query('page') || '1');
-    const limit = parseInt(c.req.query('limit') || '50');
+    const limit = parseInt(c.req.query('limit') || '1000'); // Increased default limit to ensure we see most clients
 
     // 2. Fetch all data (KV limitation)
     let clients = await kv.getByPrefix('client:');
+
+    // Sort by createdAt descending (newest first)
+    clients.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     // 3. Apply Filters on Server Side
     if (location && location !== 'all') {
@@ -100,6 +103,49 @@ app.get('/clients', async (c) => {
 
   } catch (error) {
     console.error('Error fetching clients:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Get next client ID (Auto-generation)
+app.get('/clients/next-id', async (c) => {
+  try {
+    const program = c.req.query('program');
+    const clients = await kv.getByPrefix('client:');
+    
+    // Determine prefix based on program
+    let prefix = 'CL';
+    if (program === 'NSP') prefix = 'NSP';
+    else if (program === 'MAT') prefix = 'MAT';
+    else if (program === 'Stimulants') prefix = 'STIM';
+    
+    let maxId = 0;
+    
+    clients.forEach(client => {
+      if (client.clientId && typeof client.clientId === 'string') {
+        // Check if ID starts with the determined prefix
+        // Format: PREFIX-NUMBER (e.g., NSP-1001, CL-1001)
+        const parts = client.clientId.split('-');
+        if (parts.length === 2) {
+          const idPrefix = parts[0].toUpperCase();
+          const idNum = parseInt(parts[1], 10);
+          
+          if (idPrefix === prefix && !isNaN(idNum)) {
+            if (idNum > maxId) {
+              maxId = idNum;
+            }
+          }
+        }
+      }
+    });
+    
+    // If no existing IDs found for this prefix, start at 1000, otherwise increment
+    const nextNum = maxId === 0 ? 1001 : maxId + 1;
+    const nextId = `${prefix}-${nextNum}`;
+    
+    return c.json({ success: true, nextId });
+  } catch (error) {
+    console.error('Error generating next client ID:', error);
     return c.json({ success: false, error: error.message }, 500);
   }
 });

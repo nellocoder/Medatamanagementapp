@@ -74,6 +74,59 @@ export const ROLE_DEFINITIONS = {
     color: '#ef4444',
     icon: 'Shield',
   },
+
+  'Admin': {
+    name: 'Admin',
+    description: 'Full unrestricted access to everything',
+    permissions: Object.values(PERMISSIONS),
+    color: '#ef4444',
+    icon: 'Shield',
+  },
+
+  'Viewer': {
+    name: 'Viewer',
+    description: 'View-only access to all modules',
+    permissions: [
+      PERMISSIONS.CLIENT_VIEW,
+      PERMISSIONS.VISIT_VIEW,
+      PERMISSIONS.PROGRAM_VIEW,
+      PERMISSIONS.REPORT_VIEW,
+      PERMISSIONS.ANALYTICS_VIEW,
+      PERMISSIONS.FORM_VIEW,
+      PERMISSIONS.FOLLOWUP_VIEW,
+      PERMISSIONS.INTERVENTION_VIEW,
+      PERMISSIONS.OUTREACH_VIEW,
+    ],
+    color: '#94a3b8',
+    icon: 'Eye',
+  },
+  
+  'Data Entry': {
+    name: 'Data Entry',
+    description: 'Enter, verify, clean, and validate data',
+    permissions: [
+      PERMISSIONS.CLIENT_VIEW,
+      PERMISSIONS.CLIENT_CREATE,
+      PERMISSIONS.CLIENT_EDIT,
+      PERMISSIONS.VISIT_VIEW,
+      PERMISSIONS.VISIT_CREATE,
+      PERMISSIONS.VISIT_EDIT,
+      PERMISSIONS.PROGRAM_VIEW,
+      PERMISSIONS.REPORT_VIEW,
+      PERMISSIONS.REPORT_CREATE,
+      PERMISSIONS.FORM_VIEW,
+      PERMISSIONS.ANALYTICS_VIEW,
+      PERMISSIONS.OUTREACH_VIEW,
+      PERMISSIONS.OUTREACH_CREATE,
+      PERMISSIONS.OUTREACH_EDIT,
+    ],
+    restrictions: {
+      cannotModifyUserRoles: true,
+      cannotEditClinicalNotes: true,
+    },
+    color: '#6366f1',
+    icon: 'Database',
+  },
   
   'Clinician': {
     name: 'Clinician',

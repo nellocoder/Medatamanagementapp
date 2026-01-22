@@ -23,8 +23,8 @@ export default function App() {
     if (storedUser) {
       const user = JSON.parse(storedUser);
       
-      // Ensure permissions are computed if not present
-      if (!user.permissions && user.role) {
+      // Always refresh permissions from the role definition to ensure they are up to date
+      if (user.role) {
         const rolePermissions = getRolePermissions(user.role);
         const permissionOverrides = Array.isArray(user.permissionOverrides) 
           ? user.permissionOverrides 

@@ -30,6 +30,8 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
   const [isGeneratorDialogOpen, setIsGeneratorDialogOpen] = useState(false);
   const [viewingClientId, setViewingClientId] = useState<string | null>(null);
   const [showMigrationTool, setShowMigrationTool] = useState(false);
+  const [generatedClientId, setGeneratedClientId] = useState('');
+  const [selectedProgram, setSelectedProgram] = useState('General');
 
   const canEdit = currentUser?.role === 'Admin' || currentUser?.role === 'M&E Officer' || currentUser?.role === 'Data Entry';
   const isAdmin = currentUser?.role === 'Admin';
@@ -40,6 +42,27 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
     const interval = setInterval(loadClients, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (isAddDialogOpen) {
+      fetchNextClientId(selectedProgram);
+    }
+  }, [isAddDialogOpen, selectedProgram]);
+
+  const fetchNextClientId = async (program: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients/next-id?program=${program}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      const data = await response.json();
+      if (data.success) {
+        setGeneratedClientId(data.nextId);
+      }
+    } catch (error) {
+      console.error('Error fetching next client ID:', error);
+    }
+  };
 
   useEffect(() => {
     let filtered = clients;
@@ -87,6 +110,7 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
     
     const client = {
       clientId: formData.get('clientId'),
+      program: formData.get('program'),
       firstName: formData.get('firstName'),
       lastName: formData.get('lastName'),
       age: formData.get('age'),
@@ -182,10 +206,38 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
                   <DialogDescription>Enter the client information below to create a new record.</DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleAddClient} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="program">Client Type / Program *</Label>
+                    <Select 
+                      name="program" 
+                      required 
+                      value={selectedProgram}
+                      onValueChange={setSelectedProgram}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select program type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="General">General Client</SelectItem>
+                        <SelectItem value="NSP">NSP (Needle & Syringe)</SelectItem>
+                        <SelectItem value="MAT">MAT (Methadone)</SelectItem>
+                        <SelectItem value="Stimulants">Stimulants User</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="clientId">Client ID *</Label>
-                      <Input id="clientId" name="clientId" required placeholder="CL-001" />
+                      <Label htmlFor="clientId">Client ID (Auto-generated)</Label>
+                      <Input 
+                        id="clientId" 
+                        name="clientId" 
+                        required 
+                        readOnly
+                        className="bg-gray-100 cursor-not-allowed"
+                        placeholder="Select program to generate ID" 
+                        value={generatedClientId}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="location">Location *</Label>

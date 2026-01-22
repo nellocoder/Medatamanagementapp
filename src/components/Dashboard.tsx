@@ -124,7 +124,7 @@ export function Dashboard({ currentUser }: DashboardProps) {
       // Simulate Sync Status (Backend doesn't provide this yet)
       setSyncStatus({
         'Mombasa': { status: 'synced', lastSync: new Date(Date.now() - 300000), nextSync: 5 },
-        'Lamu': { status: 'syncing', lastSync: new Date(Date.now() - 600000), nextSync: 2 },
+        'Lamu': { status: 'synced', lastSync: new Date(Date.now() - 60000), nextSync: 15 },
         'Kilifi': { status: 'synced', lastSync: new Date(Date.now() - 180000), nextSync: 7 }
       });
 
