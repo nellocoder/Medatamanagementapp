@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
 import { VisitDetail } from './VisitDetail';
+import { RecordVisitForm } from './RecordVisitForm';
 import { PHQ9Form, GAD7Form } from './MentalHealthForms';
 
 interface VisitManagementProps {
@@ -469,157 +470,22 @@ export function VisitManagement({ currentUser, initialVisitId }: VisitManagement
                 Record New Visit
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
+            <DialogContent className="max-w-5xl h-[90vh] p-0 overflow-hidden flex flex-col">
+              <DialogHeader className="p-6 pb-2 border-b bg-white z-10">
                 <DialogTitle>Record New Visit</DialogTitle>
-                <DialogDescription>Add a new visit record for a client.</DialogDescription>
+                <DialogDescription>Add a new visit record with mandatory screenings.</DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleAddVisit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="clientId">Client *</Label>
-                  <Select name="clientId" required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select client" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map(client => (
-                        <SelectItem key={client.id} value={client.id}>
-                          {client.firstName} {client.lastName} - {client.clientId}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="visitDate">Visit Date *</Label>
-                    <Input id="visitDate" name="visitDate" type="date" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="visitType">Visit Type *</Label>
-                    <Select name="visitType" required>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Clinical Review">Clinical Review</SelectItem>
-                        <SelectItem value="Outreach Visit">Outreach Visit</SelectItem>
-                        <SelectItem value="Case Management">Case Management</SelectItem>
-                        <SelectItem value="Psychosocial Session">Psychosocial Session</SelectItem>
-                        <SelectItem value="Follow-up">Follow-up</SelectItem>
-                        <SelectItem value="Emergency">Emergency</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="location">Location *</Label>
-                  <Select name="location" required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Clinic">Clinic</SelectItem>
-                      <SelectItem value="Community">Community</SelectItem>
-                      <SelectItem value="Home Visit">Home Visit</SelectItem>
-                      <SelectItem value="Outreach">Outreach</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="reason">Reason for Visit</Label>
-                  <Input id="reason" name="reason" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notes & Observations</Label>
-                  <Textarea id="notes" name="notes" rows={3} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Services Provided *</Label>
-                  <div className="border rounded-lg p-4 max-h-60 overflow-y-auto space-y-3">
-                    {Object.entries(
-                      AVAILABLE_SERVICES.reduce((acc, service) => {
-                        if (!acc[service.category]) acc[service.category] = [];
-                        acc[service.category].push(service.name);
-                        return acc;
-                      }, {} as Record<string, string[]>)
-                    ).map(([category, services]) => (
-                      <div key={category}>
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">{category}</h4>
-                        <div className="space-y-1.5">
-                          {services.map((serviceName) => (
-                            <div key={serviceName} className="flex items-center space-x-2">
-                              <Checkbox
-                                id={serviceName}
-                                checked={selectedServices.includes(serviceName)}
-                                onCheckedChange={(checked) => {
-                                  if (checked) {
-                                    setSelectedServices([...selectedServices, serviceName]);
-                                  } else {
-                                    setSelectedServices(selectedServices.filter((s) => s !== serviceName));
-                                  }
-                                }}
-                              />
-                              <label
-                                htmlFor={serviceName}
-                                className="text-sm cursor-pointer select-none"
-                              >
-                                {serviceName}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {selectedServices.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {selectedServices.map((service) => (
-                        <Badge key={service} variant="secondary" className="text-xs">
-                          {service}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="followUpRequired">Follow-up Required?</Label>
-                    <Select name="followUpRequired">
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">Yes</SelectItem>
-                        <SelectItem value="false">No</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nextAppointment">Next Appointment</Label>
-                    <Input id="nextAppointment" name="nextAppointment" type="date" />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button type="button" variant="outline" onClick={() => {
+              <div className="flex-1 overflow-y-auto p-6 relative">
+                <RecordVisitForm 
+                  clients={clients} 
+                  currentUser={currentUser} 
+                  onSuccess={() => {
                     setIsAddVisitOpen(false);
-                    setSelectedServices([]);
-                  }}>
-                    Cancel
-                  </Button>
-                  <Button type="submit">
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Visit
-                  </Button>
-                </div>
-              </form>
+                    loadData();
+                  }}
+                  onCancel={() => setIsAddVisitOpen(false)}
+                />
+              </div>
             </DialogContent>
           </Dialog>
         )}
