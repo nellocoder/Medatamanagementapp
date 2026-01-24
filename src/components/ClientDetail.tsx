@@ -37,6 +37,12 @@ import {
   X,
   Upload
 } from 'lucide-react';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "./ui/accordion";
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
 
 interface ClientDetailProps {
@@ -348,6 +354,7 @@ export function ClientDetail({ clientId, onBack, currentUser }: ClientDetailProp
 
   const canEdit = hasPermission(currentUser?.permissions || [], PERMISSIONS.CLIENT_EDIT);
   const canViewSensitive = hasPermission(currentUser?.permissions || [], PERMISSIONS.CLIENT_VIEW_SENSITIVE);
+  const canViewClinical = hasPermission(currentUser?.permissions || [], PERMISSIONS.CLINICAL_VIEW);
 
   return (
     <div className="p-4 md:p-8 space-y-6 bg-gray-50 min-h-screen">
@@ -438,9 +445,9 @@ export function ClientDetail({ clientId, onBack, currentUser }: ClientDetailProp
             Visits
             <Badge variant="secondary" className="ml-2">{visits.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="clinical">Clinical Results</TabsTrigger>
+          {canViewClinical && <TabsTrigger value="clinical">Clinical Results</TabsTrigger>}
           <TabsTrigger value="interventions">Interventions</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="timeline">History & Audit</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -601,191 +608,223 @@ export function ClientDetail({ clientId, onBack, currentUser }: ClientDetailProp
         {/* Visits Tab */}
         <TabsContent value="visits" className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl">Visit Records</h2>
-            <Dialog open={isAddVisitOpen} onOpenChange={setIsAddVisitOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Visit
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Record New Visit</DialogTitle>
-                  <DialogDescription>Add a new visit record for this client.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleAddVisit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="visitDate">Visit Date *</Label>
-                      <Input id="visitDate" name="visitDate" type="date" required />
+            <h2 className="text-xl font-semibold">Visit History</h2>
+            {hasPermission(currentUser?.permissions || [], PERMISSIONS.VISIT_CREATE) && (
+              <Dialog open={isAddVisitOpen} onOpenChange={setIsAddVisitOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Record Visit
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Record New Visit</DialogTitle>
+                    <DialogDescription>Add a new visit record for this client.</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleAddVisit} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="visitDate">Visit Date *</Label>
+                        <Input id="visitDate" name="visitDate" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="visitType">Visit Type *</Label>
+                        <Select name="visitType" required>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Clinical Review">Clinical Review</SelectItem>
+                            <SelectItem value="Outreach Visit">Outreach Visit</SelectItem>
+                            <SelectItem value="Case Management">Case Management</SelectItem>
+                            <SelectItem value="Psychosocial Session">Psychosocial Session</SelectItem>
+                            <SelectItem value="Follow-up">Follow-up</SelectItem>
+                            <SelectItem value="Emergency">Emergency</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
+
                     <div className="space-y-2">
-                      <Label htmlFor="visitType">Visit Type *</Label>
-                      <Select name="visitType" required>
+                      <Label htmlFor="location">Location *</Label>
+                      <Select name="location" required>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder="Select location" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Clinical Review">Clinical Review</SelectItem>
-                          <SelectItem value="Outreach Visit">Outreach Visit</SelectItem>
-                          <SelectItem value="Case Management">Case Management</SelectItem>
-                          <SelectItem value="Psychosocial Session">Psychosocial Session</SelectItem>
-                          <SelectItem value="Follow-up">Follow-up</SelectItem>
-                          <SelectItem value="Emergency">Emergency</SelectItem>
+                          <SelectItem value="Clinic">Clinic</SelectItem>
+                          <SelectItem value="Community">Community</SelectItem>
+                          <SelectItem value="Home Visit">Home Visit</SelectItem>
+                          <SelectItem value="Outreach">Outreach</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="location">Location *</Label>
-                    <Select name="location" required>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select location" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Clinic">Clinic</SelectItem>
-                        <SelectItem value="Community">Community</SelectItem>
-                        <SelectItem value="Home Visit">Home Visit</SelectItem>
-                        <SelectItem value="Outreach">Outreach</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="reason">Reason for Visit</Label>
-                    <Input id="reason" name="reason" />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notes & Observations</Label>
-                    <Textarea id="notes" name="notes" rows={3} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Services Provided *</Label>
-                    <div className="border rounded-lg p-4 max-h-60 overflow-y-auto space-y-3">
-                      {Object.entries(
-                        AVAILABLE_SERVICES.reduce((acc, service) => {
-                          if (!acc[service.category]) acc[service.category] = [];
-                          acc[service.category].push(service.name);
-                          return acc;
-                        }, {} as Record<string, string[]>)
-                      ).map(([category, services]) => (
-                        <div key={category}>
-                          <h4 className="text-sm font-medium text-gray-700 mb-2">{category}</h4>
-                          <div className="space-y-1.5">
-                            {services.map((serviceName) => (
-                              <div key={serviceName} className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={serviceName}
-                                  checked={selectedServices.includes(serviceName)}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      setSelectedServices([...selectedServices, serviceName]);
-                                    } else {
-                                      setSelectedServices(selectedServices.filter((s) => s !== serviceName));
-                                    }
-                                  }}
-                                />
-                                <label
-                                  htmlFor={serviceName}
-                                  className="text-sm cursor-pointer select-none"
-                                >
-                                  {serviceName}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                    <div className="space-y-2">
+                      <Label htmlFor="reason">Reason for Visit</Label>
+                      <Input id="reason" name="reason" placeholder="e.g. Routine checkup, crisis intervention" />
                     </div>
-                    {selectedServices.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {selectedServices.map((service) => (
-                          <Badge key={service} variant="secondary" className="text-xs">
-                            {service}
-                          </Badge>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="notes">Notes & Observations</Label>
+                      <Textarea id="notes" name="notes" rows={3} placeholder="Enter clinical notes or observations..." />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Services Provided *</Label>
+                      <div className="border rounded-lg p-4 max-h-60 overflow-y-auto space-y-3 bg-slate-50">
+                        {Object.entries(
+                          AVAILABLE_SERVICES.reduce((acc, service) => {
+                            if (!acc[service.category]) acc[service.category] = [];
+                            acc[service.category].push(service.name);
+                            return acc;
+                          }, {} as Record<string, string[]>)
+                        ).map(([category, services]) => (
+                          <div key={category}>
+                            <h4 className="text-sm font-semibold text-slate-900 mb-2">{category}</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                              {services.map((serviceName) => (
+                                <div key={serviceName} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={serviceName}
+                                    checked={selectedServices.includes(serviceName)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedServices([...selectedServices, serviceName]);
+                                      } else {
+                                        setSelectedServices(selectedServices.filter((s) => s !== serviceName));
+                                      }
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor={serviceName}
+                                    className="text-sm cursor-pointer select-none text-slate-700"
+                                  >
+                                    {serviceName}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="followUpRequired">Follow-up Required?</Label>
-                      <Select name="followUpRequired">
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">Yes</SelectItem>
-                          <SelectItem value="false">No</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {selectedServices.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {selectedServices.map((service) => (
+                            <Badge key={service} variant="secondary" className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
+                              {service}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="nextAppointment">Next Appointment</Label>
-                      <Input id="nextAppointment" name="nextAppointment" type="date" />
-                    </div>
-                  </div>
 
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button type="button" variant="outline" onClick={() => setIsAddVisitOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit">
-                      <Save className="w-4 h-4 mr-2" />
-                      Save Visit
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="followUpRequired">Follow-up Required?</Label>
+                        <Select name="followUpRequired">
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">Yes</SelectItem>
+                            <SelectItem value="false">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="nextAppointment">Next Appointment</Label>
+                        <Input id="nextAppointment" name="nextAppointment" type="date" />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t">
+                      <Button type="button" variant="outline" onClick={() => setIsAddVisitOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit">
+                        <Save className="w-4 h-4 mr-2" />
+                        Save Visit
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
 
           <Card className="rounded-2xl shadow-sm border-0 bg-white">
             <CardContent className="pt-6">
               {visits.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">No visits recorded</div>
+                <div className="text-center text-gray-500 py-12 flex flex-col items-center">
+                  <Calendar className="w-12 h-12 text-gray-300 mb-4" />
+                  <p>No visits recorded yet.</p>
+                </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Follow-up</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visits.map((visit) => (
-                      <TableRow key={visit.id}>
-                        <TableCell>{new Date(visit.visitDate).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{visit.visitType}</Badge>
-                        </TableCell>
-                        <TableCell>{visit.location}</TableCell>
-                        <TableCell className="max-w-xs truncate">{visit.reason || '-'}</TableCell>
-                        <TableCell>
-                          {visit.followUpRequired ? (
-                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                              <Clock className="w-3 h-3 mr-1" />
-                              Required
+                <Accordion type="single" collapsible className="w-full">
+                  {visits.map((visit) => (
+                    <AccordionItem key={visit.id} value={visit.id} className="border-b last:border-0">
+                      <AccordionTrigger className="hover:no-underline hover:bg-slate-50 px-4 rounded-lg">
+                        <div className="flex items-center gap-6 w-full">
+                          <div className="flex items-center gap-2 min-w-[120px]">
+                            <Calendar className="w-4 h-4 text-slate-400" />
+                            <span className="font-medium">{new Date(visit.visitDate).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-1">
+                            <Badge variant="outline" className="font-normal text-slate-600 bg-white">
+                              {visit.visitType}
                             </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                              <CheckCircle2 className="w-3 h-3 mr-1" />
-                              Complete
-                            </Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                            <span className="text-sm text-slate-500 hidden md:inline-block">
+                              @ {visit.location}
+                            </span>
+                          </div>
+                          <div className="mr-4">
+                             {visit.followUpRequired && (
+                                <Badge variant="destructive" className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100">
+                                  Follow-up
+                                </Badge>
+                             )}
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-4 pb-4">
+                        <div className="pt-2 pl-4 border-l-2 border-slate-100 space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div>
+                               <h4 className="text-xs font-semibold uppercase text-slate-500 mb-1">Reason & Notes</h4>
+                               <p className="text-sm font-medium text-slate-900 mb-1">{visit.reason}</p>
+                               <p className="text-sm text-slate-600 whitespace-pre-wrap">{visit.notes || 'No additional notes.'}</p>
+                             </div>
+                             <div>
+                               <h4 className="text-xs font-semibold uppercase text-slate-500 mb-1">Services Provided</h4>
+                               <div className="flex flex-wrap gap-2">
+                                 {visit.servicesProvided ? (
+                                   visit.servicesProvided.split(', ').map((service: string, idx: number) => (
+                                     <Badge key={idx} variant="secondary" className="bg-slate-100 text-slate-700 border-slate-200">
+                                       {service}
+                                     </Badge>
+                                   ))
+                                 ) : (
+                                   <span className="text-sm text-slate-400 italic">No services recorded</span>
+                                 )}
+                               </div>
+                             </div>
+                          </div>
+                          <div className="flex items-center gap-4 pt-2 text-xs text-slate-400 border-t border-slate-50 mt-2">
+                            <span>Recorded by: {visit.provider || currentUser?.name || 'Staff'}</span>
+                            {visit.nextAppointment && (
+                               <span className="flex items-center gap-1 text-amber-600 font-medium">
+                                 <Clock className="w-3 h-3" />
+                                 Next Appointment: {new Date(visit.nextAppointment).toLocaleDateString()}
+                               </span>
+                            )}
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
               )}
             </CardContent>
           </Card>
@@ -1077,49 +1116,64 @@ export function ClientDetail({ clientId, onBack, currentUser }: ClientDetailProp
           </Card>
         </TabsContent>
 
-        {/* Timeline Tab */}
+        {/* Audit Log / History Tab */}
         <TabsContent value="timeline" className="space-y-6">
-          <h2 className="text-xl">Client Timeline</h2>
+          <div className="flex justify-between items-center">
+             <h2 className="text-xl font-semibold">Record History & Audit Trail</h2>
+             <Badge variant="outline" className="gap-1">
+               <Shield className="w-3 h-3" />
+               Immutable
+             </Badge>
+          </div>
           
-          <Card className="rounded-2xl shadow-sm border-0 bg-white">
+          <Card className="rounded-2xl shadow-sm border-0 bg-slate-50">
             <CardContent className="pt-6">
               {timeline.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">No timeline events</div>
+                <div className="text-center text-gray-500 py-12">
+                  <History className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                  <p>No history available.</p>
+                </div>
               ) : (
-                <div className="space-y-6">
+                <div className="relative pl-6 border-l-2 border-slate-200 space-y-8 ml-4">
                   {timeline.map((event, idx) => (
-                    <div key={event.id || idx} className="flex gap-4">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                          event.type === 'visit' ? 'bg-blue-100' :
-                          event.type === 'clinical-result' ? 'bg-green-100' :
-                          event.type === 'intervention' ? 'bg-purple-100' :
-                          'bg-gray-100'
-                        }`}>
-                          {event.type === 'visit' && <FileText className="w-5 h-5 text-blue-600" />}
-                          {event.type === 'clinical-result' && <TestTube className="w-5 h-5 text-green-600" />}
-                          {event.type === 'intervention' && <Heart className="w-5 h-5 text-purple-600" />}
-                          {event.type === 'audit' && <History className="w-5 h-5 text-gray-600" />}
+                    <div key={event.id || idx} className="relative">
+                      {/* Timeline Dot */}
+                      <div className={`absolute -left-[31px] top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm ${
+                        event.type === 'audit' ? 'bg-slate-400' : 
+                        event.type === 'visit' ? 'bg-blue-500' :
+                        event.type === 'clinical' ? 'bg-emerald-500' : 'bg-indigo-500'
+                      }`} />
+                      
+                      <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-100">
+                        <div className="flex justify-between items-start mb-2">
+                           <div>
+                             <h4 className="font-semibold text-slate-900">
+                               {event.action || (event.type === 'visit' ? 'Visit Recorded' : 'Update')}
+                             </h4>
+                             <p className="text-xs text-slate-500">
+                               {event.type === 'audit' ? `System Audit: ${event.entityType}` : event.type.toUpperCase()}
+                             </p>
+                           </div>
+                           <div className="text-right">
+                             <div className="text-xs font-mono text-slate-500">
+                               {new Date(event.timestamp).toLocaleString()}
+                             </div>
+                             <div className="flex items-center justify-end gap-1 mt-1 text-xs text-slate-600 font-medium">
+                               <User className="w-3 h-3" />
+                               {event.userName || event.provider || 'System'}
+                             </div>
+                           </div>
                         </div>
-                        {idx < timeline.length - 1 && (
-                          <div className="w-0.5 h-full bg-gray-200 mt-2" />
-                        )}
-                      </div>
-                      <div className="flex-1 pb-8">
-                        <div className="flex items-center justify-between mb-1">
-                          <h4 className="font-medium">
-                            {event.type === 'visit' && event.visitType}
-                            {event.type === 'clinical-result' && `Clinical Result - ${event.type}`}
-                            {event.type === 'intervention' && event.category}
-                            {event.type === 'audit' && `${event.action} (${event.entityType})`}
-                          </h4>
-                          <span className="text-sm text-gray-500">
-                            {new Date(event.timestamp).toLocaleDateString()}
-                          </span>
+                        
+                        {/* Change Details */}
+                        <div className="text-sm text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">
+                           {event.details || event.notes || event.reason || 'No specific details recorded.'}
+                           {event.changes && (
+                             <div className="mt-2 text-xs font-mono bg-white p-2 border rounded">
+                               {JSON.stringify(event.changes, null, 2)}
+                             </div>
+                           )}
                         </div>
-                        <p className="text-sm text-gray-600">
-                          {event.notes || event.reason || 'No additional details'}
-                        </p>
                       </div>
                     </div>
                   ))}

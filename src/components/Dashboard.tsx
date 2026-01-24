@@ -84,12 +84,12 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
 
   // Initial Load & Auto-Refresh
   useEffect(() => {
-    loadDashboardData();
-    const interval = setInterval(loadDashboardData, 30000); // 30s polling
+    loadDashboardData(false); // Initial load shows errors
+    const interval = setInterval(() => loadDashboardData(true), 30000); // Auto-refresh suppresses errors
     return () => clearInterval(interval);
   }, [filters]); // Reload when filters change
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (isAutoRefresh = false) => {
     try {
       if (!projectId || !publicAnonKey) {
         setLoading(false);
@@ -115,6 +115,10 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
+      if (!metricsRes.ok || !visitsRes.ok) {
+        throw new Error('Server returned an error');
+      }
+
       const [metricsData, visitsData] = await Promise.all([
         metricsRes.json(),
         visitsRes.json()
@@ -132,7 +136,9 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
 
     } catch (error) {
       console.error('Error loading dashboard:', error);
-      toast.error('Failed to update dashboard');
+      if (!isAutoRefresh) {
+        toast.error('Failed to update dashboard. Server might be unreachable.');
+      }
     } finally {
       setLoading(false);
     }
@@ -168,7 +174,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Failed to load dashboard</h2>
           <p className="text-gray-600 mb-6">There was a problem connecting to the server. Please check your internet connection and try again.</p>
-          <Button onClick={loadDashboardData}>
+          <Button onClick={() => loadDashboardData(false)}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Retry Connection
           </Button>
@@ -211,7 +217,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             </div>
             <span className="text-sm text-gray-700">Live</span>
           </div>
-          <Button variant="outline" size="sm" onClick={loadDashboardData}>
+          <Button variant="outline" size="sm" onClick={() => loadDashboardData(false)}>
             <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
@@ -362,8 +368,8 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Clients by Location</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full relative">
-              <ResponsiveContainer width="99%" height="100%">
+            <div className="h-[300px] w-full relative min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <BarChart data={locationData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" />
@@ -382,8 +388,8 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Age Demographics</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full relative">
-              <ResponsiveContainer width="99%" height="100%">
+            <div className="h-[300px] w-full relative min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie
                     data={ageData}

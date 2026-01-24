@@ -470,7 +470,7 @@ export function VisitManagement({ currentUser, initialVisitId }: VisitManagement
                 Record New Visit
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-5xl h-[90vh] p-0 overflow-hidden flex flex-col">
+            <DialogContent className="max-w-[98vw] sm:max-w-[98vw] w-full h-[98vh] p-0 overflow-hidden flex flex-col">
               <DialogHeader className="p-6 pb-2 border-b bg-white z-10">
                 <DialogTitle>Record New Visit</DialogTitle>
                 <DialogDescription>Add a new visit record with mandatory screenings.</DialogDescription>
@@ -716,7 +716,7 @@ export function VisitManagement({ currentUser, initialVisitId }: VisitManagement
           setSelectedServices([]);
         }
       }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[98vw] sm:max-w-[98vw] w-full h-[98vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Visit Details</DialogTitle>
             <DialogDescription>

@@ -43,6 +43,33 @@ export function VisitDetail({ visit, client, onBack, currentUser, onUpdate }: Vi
     }
   };
 
+  // PrEP RAST Summary Logic
+  const prepRastData = visit.metadata?.screenings?.prepRast;
+  const showPrepRastSummary = prepRastData && (prepRastData.eligible || prepRastData.severity === 'high');
+
+  const getRiskDescription = (qid: string, answer: string) => {
+      // Only show risk factors
+      if (answer !== 'Yes' && answer !== 'Positive' && answer !== 'Unknown') return null;
+      if (qid === 'q1' && answer === 'Positive') return 'Self-reported HIV Positive Status';
+      if (qid === 'q2' && (answer === 'Positive' || answer === 'Unknown')) return 'Partner HIV Status (Positive/Unknown)';
+      
+      const descriptions: Record<string, string> = {
+          'q3': 'Unprotected sex with partner of unknown/positive status',
+          'q4': 'Engagement in transactional sex',
+          'q5': 'Recent STI diagnosis/treatment',
+          'q6': 'Sharing of needles/injection equipment',
+          'q7': 'History of sexual violence or coercion',
+          'q8': 'Recurrent use of PEP (2+ times)'
+      };
+      return descriptions[qid];
+  };
+
+  const riskFactors = showPrepRastSummary && prepRastData.answers ? 
+      Object.entries(prepRastData.answers)
+          .map(([k, v]) => ({ id: k, desc: getRiskDescription(k, v as string) }))
+          .filter(item => item.desc) 
+      : [];
+
   // Role-based module access
   const isAdmin = currentUser?.role === 'Admin';
   
@@ -164,6 +191,39 @@ export function VisitDetail({ visit, client, onBack, currentUser, onUpdate }: Vi
                   {(flag.type?.replace(/-/g, ' ') || 'Unknown Risk').toUpperCase()}
                 </Badge>
               ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PrEP Risk Factor Summary */}
+      {showPrepRastSummary && riskFactors.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-800">
+              <Activity className="w-5 h-5" />
+              PrEP Risk Assessment Factors
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <p className="text-sm text-amber-900 font-medium">
+                Client screened eligible for PrEP based on the following reported risk factors:
+              </p>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {riskFactors.map((factor, idx) => (
+                   <li key={idx} className="flex items-start gap-2 text-sm text-amber-800 bg-white/50 p-2 rounded border border-amber-100">
+                     <span className="mt-0.5 min-w-[6px] min-h-[6px] rounded-full bg-amber-500" />
+                     {factor.desc}
+                   </li>
+                ))}
+              </ul>
+              <div className="mt-4 pt-3 border-t border-amber-200 flex items-center justify-between">
+                 <span className="text-xs text-amber-700 font-medium uppercase tracking-wider">Assessment Outcome</span>
+                 <Badge className="bg-amber-600 hover:bg-amber-700 text-white border-transparent">
+                    Refer for PrEP Services
+                 </Badge>
+              </div>
             </div>
           </CardContent>
         </Card>

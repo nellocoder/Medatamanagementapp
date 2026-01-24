@@ -12,6 +12,7 @@ import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { Plus, Search, Download, Eye, Database, Map } from 'lucide-react';
 import { DataGeneratorUI } from './DataGeneratorUI';
 import { ClientDetail } from './ClientDetail';
+import { NewClientForm } from './NewClientForm';
 import { LocationMigrationTool } from './LocationMigrationTool';
 
 interface ClientManagementProps {
@@ -24,17 +25,49 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isGeneratorDialogOpen, setIsGeneratorDialogOpen] = useState(false);
   const [viewingClientId, setViewingClientId] = useState<string | null>(null);
   const [showMigrationTool, setShowMigrationTool] = useState(false);
-  const [generatedClientId, setGeneratedClientId] = useState('');
-  const [selectedProgram, setSelectedProgram] = useState('General');
-
+  const [showAddForm, setShowAddForm] = useState(false);
+  
   const canEdit = currentUser?.role === 'Admin' || currentUser?.role === 'M&E Officer' || currentUser?.role === 'Data Entry';
   const isAdmin = currentUser?.role === 'Admin';
+  
+  const handleMigrateIds = async () => {
+    if (!confirm('Are you sure you want to migrate all Client IDs? This will update IDs for all existing clients based on the new format (PREFIX-CountyGender-Sequence). This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/admin/migrate-ids`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId: currentUser?.id })
+        }
+      );
+      
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Successfully migrated ${data.migratedCount} clients!`);
+        loadClients();
+      } else {
+        toast.error(`Migration failed: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error migrating IDs:', error);
+      toast.error('Failed to migrate IDs');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadClients();
@@ -42,27 +75,6 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
     const interval = setInterval(loadClients, 10000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    if (isAddDialogOpen) {
-      fetchNextClientId(selectedProgram);
-    }
-  }, [isAddDialogOpen, selectedProgram]);
-
-  const fetchNextClientId = async (program: string) => {
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients/next-id?program=${program}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-      const data = await response.json();
-      if (data.success) {
-        setGeneratedClientId(data.nextId);
-      }
-    } catch (error) {
-      console.error('Error fetching next client ID:', error);
-    }
-  };
 
   useEffect(() => {
     let filtered = clients;
@@ -104,61 +116,40 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
     }
   };
 
-  const handleAddClient = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    
-    const client = {
-      clientId: formData.get('clientId'),
-      program: formData.get('program'),
-      firstName: formData.get('firstName'),
-      lastName: formData.get('lastName'),
-      age: formData.get('age'),
-      gender: formData.get('gender'),
-      location: formData.get('location'),
-      phone: formData.get('phone'),
-      email: formData.get('email'),
-      address: formData.get('address'),
-      status: 'Active',
-    };
-
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/clients`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({ client, userId: currentUser.id }),
-        }
-      );
-
-      const data = await response.json();
-      if (data.success) {
-        toast.success('Client added successfully!');
-        setIsAddDialogOpen(false);
-        loadClients();
-      } else {
-        toast.error(data.error || 'Failed to add client');
-      }
-    } catch (error) {
-      console.error('Error adding client:', error);
-      toast.error('Network error. Please try again.');
-    }
-  };
-
   const exportToCSV = () => {
-    const headers = ['Client ID', 'First Name', 'Last Name', 'Age', 'Gender', 'Location', 'Phone', 'Status'];
+    const headers = [
+      'Client ID', 'Program', 'First Name', 'Last Name', 'Gender', 'Age', 'DOB',
+      'Date of First Contact', 'Peer Educator', 
+      'County', 'Sub-County', 'Hotspot', 
+      'Phone', 'Alt Phone', 
+      'Drug Start Year', 'Other Drugs', 
+      'Status'
+    ];
+    
     const rows = filteredClients.map(c => [
-      c.clientId, c.firstName, c.lastName, c.age, c.gender, c.location, c.phone, c.status
+      c.clientId,
+      c.program || '-',
+      c.firstName,
+      c.lastName,
+      c.gender,
+      c.age,
+      c.dob || '-',
+      c.dateOfFirstContact || '-',
+      c.peerEducator || '-',
+      c.location || c.county,
+      c.subCounty || '-',
+      c.hotspot || '-',
+      c.phone || '-',
+      c.altPhone || '-',
+      c.drugStartYear || '-',
+      c.otherDrugs || '-',
+      c.status
     ]);
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\\n');
+      ...rows.map(row => row.map(cell => `"${cell || ''}"`).join(','))
+    ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -180,6 +171,20 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
     );
   }
 
+  // If adding a new client, show the full-page form
+  if (showAddForm) {
+    return (
+      <NewClientForm 
+        currentUser={currentUser}
+        onSuccess={() => {
+          setShowAddForm(false);
+          loadClients();
+        }}
+        onCancel={() => setShowAddForm(false)}
+      />
+    );
+  }
+
   return (
     <div className="p-8 space-y-6">
       <div className="flex justify-between items-start">
@@ -193,124 +198,10 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
             Export CSV
           </Button>
           {canEdit && (
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Client
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Add New Client</DialogTitle>
-                  <DialogDescription>Enter the client information below to create a new record.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleAddClient} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="program">Client Type / Program *</Label>
-                    <Select 
-                      name="program" 
-                      required 
-                      value={selectedProgram}
-                      onValueChange={setSelectedProgram}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select program type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="General">General Client</SelectItem>
-                        <SelectItem value="NSP">NSP (Needle & Syringe)</SelectItem>
-                        <SelectItem value="MAT">MAT (Methadone)</SelectItem>
-                        <SelectItem value="Stimulants">Stimulants User</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="clientId">Client ID (Auto-generated)</Label>
-                      <Input 
-                        id="clientId" 
-                        name="clientId" 
-                        required 
-                        readOnly
-                        className="bg-gray-100 cursor-not-allowed"
-                        placeholder="Select program to generate ID" 
-                        value={generatedClientId}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="location">Location *</Label>
-                      <Select name="location" required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Mombasa">Mombasa</SelectItem>
-                          <SelectItem value="Kilifi">Kilifi</SelectItem>
-                          <SelectItem value="Lamu">Lamu</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">First Name *</Label>
-                      <Input id="firstName" name="firstName" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">Last Name *</Label>
-                      <Input id="lastName" name="lastName" required />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="age">Age</Label>
-                      <Input id="age" name="age" type="number" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="gender">Gender</Label>
-                      <Select name="gender">
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select gender" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Male">Male</SelectItem>
-                          <SelectItem value="Female">Female</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                          <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone</Label>
-                      <Input id="phone" name="phone" type="tel" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input id="email" name="email" type="email" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
-                    <Input id="address" name="address" />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit">Add Client</Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => setShowAddForm(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Client
+            </Button>
           )}
           {isAdmin && (
             <Dialog open={isGeneratorDialogOpen} onOpenChange={setIsGeneratorDialogOpen}>
@@ -358,6 +249,12 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
               </DialogContent>
             </Dialog>
           )}
+          {isAdmin && (
+            <Button variant="destructive" onClick={handleMigrateIds} title="Migrate all Client IDs to new format">
+              <Database className="w-4 h-4 mr-2" />
+              Migrate IDs
+            </Button>
+          )}
         </div>
       </div>
 
@@ -392,61 +289,76 @@ export function ClientManagement({ currentUser }: ClientManagementProps) {
       </Card>
 
       {/* Clients Table */}
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Clients ({filteredClients.length})</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Client ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Age</TableHead>
-                <TableHead>Gender</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredClients.length === 0 ? (
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-gray-500 py-8">
-                    No clients found
-                  </TableCell>
+                  <TableHead className="w-[100px]">Client ID</TableHead>
+                  <TableHead>Program</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Gender (Age)</TableHead>
+                  <TableHead>County / Sub-County</TableHead>
+                  <TableHead>Hotspot</TableHead>
+                  <TableHead>First Contact</TableHead>
+                  <TableHead>PE</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                filteredClients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell>{client.clientId}</TableCell>
-                    <TableCell>{client.firstName} {client.lastName}</TableCell>
-                    <TableCell>{client.age || '-'}</TableCell>
-                    <TableCell>{client.gender || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{client.location}</Badge>
-                    </TableCell>
-                    <TableCell>{client.phone || '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant={client.status === 'Active' ? 'default' : 'secondary'}>
-                        {client.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setViewingClientId(client.id)}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {filteredClients.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center text-gray-500 py-8">
+                      No clients found
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  filteredClients.map((client) => (
+                    <TableRow key={client.id}>
+                      <TableCell className="font-medium">{client.clientId}</TableCell>
+                      <TableCell>{client.program || '-'}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span>{client.firstName} {client.lastName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{client.gender ? `${client.gender.charAt(0)}` : '-'} ({client.age || '-'})</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{client.location || client.county}</span>
+                          <span className="text-xs text-gray-500">{client.subCounty}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{client.hotspot || '-'}</TableCell>
+                      <TableCell>{client.dateOfFirstContact || '-'}</TableCell>
+                      <TableCell>{client.peerEducator || '-'}</TableCell>
+                      <TableCell>{client.phone || '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant={client.status === 'Active' ? 'default' : 'secondary'}>
+                          {client.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setViewingClientId(client.id)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 

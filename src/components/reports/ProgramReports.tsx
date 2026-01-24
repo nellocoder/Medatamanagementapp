@@ -16,8 +16,13 @@ import {
   Users,
   Activity,
   TrendingUp,
-  Filter
+  Filter,
+  Save,
+  Trash2,
+  FolderOpen
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from '../ui/dropdown-menu';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
@@ -37,6 +42,103 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
   const [staff, setStaff] = useState('all');
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
+  const [savedViews, setSavedViews] = useState<any[]>([]);
+  const [viewName, setViewName] = useState('');
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+
+  useEffect(() => {
+    loadSavedViews();
+  }, []);
+
+  const loadSavedViews = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/saved-views/${currentUser.id}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      const data = await response.json();
+      if (data.success) {
+        setSavedViews(data.views);
+      }
+    } catch (error) {
+      console.error('Error loading saved views:', error);
+    }
+  };
+
+  const handleSaveView = async () => {
+    if (!viewName.trim()) {
+      toast.error('Please enter a name for the view');
+      return;
+    }
+
+    try {
+      const viewConfig = {
+        name: viewName,
+        filters: {
+          program: selectedProgram,
+          dateRange,
+          startDate,
+          endDate,
+          location,
+          staff
+        }
+      };
+
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/saved-views`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          },
+          body: JSON.stringify({ view: viewConfig, userId: currentUser.id })
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('View saved successfully');
+        setSavedViews([...savedViews, data.view]);
+        setShowSaveDialog(false);
+        setViewName('');
+      } else {
+        toast.error('Failed to save view');
+      }
+    } catch (error) {
+      console.error('Error saving view:', error);
+      toast.error('Failed to save view');
+    }
+  };
+
+  const handleLoadView = (view: any) => {
+    const { filters } = view;
+    setSelectedProgram(filters.program);
+    setDateRange(filters.dateRange);
+    if (filters.startDate) setStartDate(filters.startDate);
+    if (filters.endDate) setEndDate(filters.endDate);
+    setLocation(filters.location);
+    setStaff(filters.staff);
+    toast.success(`Loaded view: ${view.name}`);
+  };
+
+  const handleDeleteView = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/saved-views/${id}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+      setSavedViews(savedViews.filter(v => v.id !== id));
+      toast.success('View deleted');
+    } catch (error) {
+      toast.error('Failed to delete view');
+    }
+  };
+
 
   const programs = [
     { id: 'nsp', name: 'NSP (Needle & Syringe)', icon: Syringe, color: 'text-blue-600' },
@@ -446,11 +548,38 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
     <div className="space-y-6">
       {/* Filters Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Filter className="w-5 h-5" />
             Report Filters
           </CardTitle>
+          <div className="flex gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={savedViews.length === 0}>
+                  <FolderOpen className="w-4 h-4 mr-2" />
+                  Load View
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Saved Views</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {savedViews.map(view => (
+                  <DropdownMenuItem key={view.id} onClick={() => handleLoadView(view)} className="flex justify-between group">
+                    <span>{view.name}</span>
+                    <Trash2 
+                      className="w-4 h-4 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" 
+                      onClick={(e) => handleDeleteView(view.id, e)}
+                    />
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="outline" size="sm" onClick={() => setShowSaveDialog(true)}>
+              <Save className="w-4 h-4 mr-2" />
+              Save View
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -718,6 +847,30 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
           </CardContent>
         </Card>
       )}
+      {/* Save View Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Current View</DialogTitle>
+            <DialogDescription>
+              Save the current filter configuration to easily access it later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>View Name</Label>
+            <Input 
+              value={viewName} 
+              onChange={(e) => setViewName(e.target.value)} 
+              placeholder="e.g., Monthly NSP Mombasa"
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDialog(false)}>Cancel</Button>
+            <Button onClick={handleSaveView}>Save View</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Card, CardContent } from './ui/card'; // Reduced imports
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -9,13 +9,11 @@ import { Textarea } from './ui/textarea';
 import { Checkbox } from './ui/checkbox';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { useFormPersistence } from '../hooks/use-form-persistence';
 import { 
   CheckCircle2, 
   AlertCircle, 
-  ChevronDown, 
-  ChevronUp, 
   Save, 
-  FileText,
   Activity,
   Brain,
   Syringe,
@@ -25,14 +23,16 @@ import {
   User,
   Calendar,
   MapPin,
-  Stethoscope
+  Stethoscope,
+  ClipboardList
 } from 'lucide-react';
 import { PHQ9Form, GAD7Form } from './MentalHealthForms';
 import { PrepRastForm } from './PrepRastForm';
+import { StandardForm, FormSection, FormRow } from './ui/standard-form-layout';
 
-// Local AssistForm definition
+// Local AssistForm definition (Unchanged)
 const AssistForm = ({ onChange, initialData }: any) => {
-  const [responses, setResponses] = useState<Record<string, any>>({});
+  const [responses, setResponses] = useState<Record<string, any>>(initialData?.responses || {});
   const [score, setScore] = useState(0);
 
   const ASSIST_SUBSTANCES = [
@@ -80,7 +80,7 @@ const AssistForm = ({ onChange, initialData }: any) => {
   );
 };
 
-// Service Categories Definition
+// Service Categories Definition (Unchanged)
 const SERVICE_GROUPS = [
   {
     id: 'clinical',
@@ -135,10 +135,10 @@ interface RecordVisitFormProps {
 
 export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: RecordVisitFormProps) {
   // 1. Visit Details State
-  const [visitDetails, setVisitDetails] = useState({
+  const [visitDetails, setVisitDetails, clearVisitDetails] = useFormPersistence('visit_form_details', {
     clientId: '',
     visitDate: new Date().toISOString().split('T')[0],
-    visitType: 'Clinical Review',
+    visitType: 'New Clinical Visit',
     location: 'Clinic',
     provider: currentUser.name,
     reason: '',
@@ -148,7 +148,7 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
   });
 
   // 2. Screening State
-  const [screenings, setScreenings] = useState({
+  const [screenings, setScreenings, clearScreenings] = useFormPersistence('visit_form_screenings', {
     phq9: { completed: false, data: null },
     gad7: { completed: false, data: null },
     assist: { completed: false, data: null },
@@ -157,17 +157,22 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
   const [activeScreeningTab, setActiveScreeningTab] = useState('phq9');
 
   // 3. Services State
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
-
+  const [selectedServices, setSelectedServices, clearServices] = useFormPersistence<string[]>('visit_form_services', []);
+  
   // 4. UI State
-  const [showSummary, setShowSummary] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const toggleGroup = (groupId: string) => {
-    setExpandedGroups(prev => 
-      prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
-    );
+  // Ensure provider is always current user
+  useEffect(() => {
+    if (currentUser?.name && visitDetails.provider !== currentUser.name) {
+      setVisitDetails(prev => ({ ...prev, provider: currentUser.name }));
+    }
+  }, [currentUser?.name]);
+
+  const clearAllDrafts = () => {
+    clearVisitDetails();
+    clearScreenings();
+    clearServices();
   };
 
   const toggleService = (service: string) => {
@@ -198,6 +203,11 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
       return;
     }
 
+    if (!visitDetails.clientId) {
+      toast.error("Please select a client.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // 1. Create Visit Record
@@ -212,7 +222,6 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
         followUpRequired: visitDetails.followUpRequired,
         nextAppointment: visitDetails.nextAppointment,
         provider: visitDetails.provider,
-        // Store screening summaries in metadata or notes for now if schema is strict
         metadata: {
           screenings: {
             phq9: screenings.phq9.data,
@@ -238,26 +247,20 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
       const data = await response.json();
       
       if (data.success) {
-        // 2. Create Clinical Results for Screenings (Optional - based on existing schema)
-        // If we need to store PHQ9/GAD7 as separate clinical_results rows:
-        if (screenings.phq9.data) {
-           await createClinicalResult(data.visit.id, 'PHQ-9', screenings.phq9.data);
-        }
-        if (screenings.gad7.data) {
-           await createClinicalResult(data.visit.id, 'GAD-7', screenings.gad7.data);
-        }
-        if (screenings.assist.data) {
-           await createClinicalResult(data.visit.id, 'ASSIST', screenings.assist.data);
-        }
+        // 2. Create Clinical Results
+        if (screenings.phq9.data) await createClinicalResult(data.visit.id, 'PHQ-9', screenings.phq9.data);
+        if (screenings.gad7.data) await createClinicalResult(data.visit.id, 'GAD-7', screenings.gad7.data);
+        if (screenings.assist.data) await createClinicalResult(data.visit.id, 'ASSIST', screenings.assist.data);
         if (screenings.prepRast.data) {
            await createClinicalResult(data.visit.id, 'PrEP RAST', {
              ...screenings.prepRast.data,
-             score: screenings.prepRast.data.eligible ? 1 : 0, // Mock score for RAST
+             score: screenings.prepRast.data.eligible ? 1 : 0,
              severity: screenings.prepRast.data.severity
            });
         }
 
         toast.success('Visit recorded successfully!');
+        clearAllDrafts();
         onSuccess();
       } else {
         toast.error(data.error || 'Failed to record visit');
@@ -287,7 +290,6 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
               type: type,
               date: visitDetails.visitDate,
               notes: `Score: ${data.score}, Severity: ${data.severity}`,
-              // Map specific fields if schema supports them
               phq9Score: type === 'PHQ-9' ? data.score : undefined,
               phq9Severity: type === 'PHQ-9' ? data.severity : undefined,
               gad7Score: type === 'GAD-7' ? data.score : undefined,
@@ -302,181 +304,133 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
     }
   };
 
-  // Summary View
-  if (showSummary) {
-    return (
-      <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between border-b pb-4">
-          <h2 className="text-2xl font-bold">Visit Summary Review</h2>
-          <Button variant="outline" onClick={() => setShowSummary(false)}>Back to Edit</Button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader><CardTitle>Visit Details</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <p><strong>Client:</strong> {clients.find(c => c.id === visitDetails.clientId)?.firstName} {clients.find(c => c.id === visitDetails.clientId)?.lastName}</p>
-              <p><strong>Date:</strong> {visitDetails.visitDate}</p>
-              <p><strong>Type:</strong> {visitDetails.visitType}</p>
-              <p><strong>Location:</strong> {visitDetails.location}</p>
-              <p><strong>Provider:</strong> {visitDetails.provider}</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Screening Results</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-between">
-                <span>PHQ-9:</span>
-                <Badge variant={screenings.phq9.data?.severity === 'Severe' ? 'destructive' : 'outline'}>
-                  {screenings.phq9.data?.score} ({screenings.phq9.data?.severity})
-                </Badge>
-              </div>
-              <div className="flex justify-between">
-                <span>GAD-7:</span>
-                <Badge variant={screenings.gad7.data?.severity === 'Severe' ? 'destructive' : 'outline'}>
-                  {screenings.gad7.data?.score} ({screenings.gad7.data?.severity})
-                </Badge>
-              </div>
-              <div className="flex justify-between">
-                <span>ASSIST:</span>
-                <Badge variant={screenings.assist.data?.severity === 'High' ? 'destructive' : 'outline'}>
-                  {screenings.assist.data?.score} ({screenings.assist.data?.severity})
-                </Badge>
-              </div>
-              {screenings.prepRast.data && (
-                <div className="flex justify-between">
-                  <span>PrEP RAST:</span>
-                  <Badge variant={screenings.prepRast.data.eligible ? 'destructive' : 'outline'}>
-                    {screenings.prepRast.data.eligible ? 'Refer' : 'Not Referred'}
-                  </Badge>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader><CardTitle>Services & Follow-up</CardTitle></CardHeader>
-          <CardContent>
-             <h4 className="font-semibold mb-2">Services Provided ({selectedServices.length})</h4>
-             <div className="flex flex-wrap gap-2 mb-4">
-               {selectedServices.map(s => <Badge key={s} variant="secondary">{s}</Badge>)}
-             </div>
-             {visitDetails.followUpRequired && (
-               <div className="bg-amber-50 p-3 rounded border border-amber-200 text-amber-800">
-                 <strong>Follow-up Required</strong>
-                 {visitDetails.nextAppointment && <span> on {visitDetails.nextAppointment}</span>}
-               </div>
-             )}
-          </CardContent>
-        </Card>
-
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Complete & Save Visit'}
-          </Button>
-        </div>
+  // ACTIONS FOR FOOTER
+  const formActions = (
+    <>
+      <div className="flex-1 text-sm text-gray-500 hidden md:block">
+         <span className={isScreeningComplete ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+           {isScreeningComplete ? "✓ Screenings Complete" : "⚠ Screenings Incomplete"}
+         </span>
+         <span className="mx-2">|</span>
+         <span>{selectedServices.length} Services Selected</span>
       </div>
-    );
-  }
+      <Button variant="outline" onClick={onCancel}>Cancel</Button>
+      <Button 
+        onClick={handleSubmit} 
+        disabled={isSubmitting || !isScreeningComplete}
+        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+      >
+        {isSubmitting ? 'Saving...' : 'Complete Visit'}
+      </Button>
+    </>
+  );
 
-  // Main Form View
   return (
-    <div className="space-y-8 pb-20"> {/* pb-20 for sticky footer */}
-      {/* 1. Visit Details Section (Always Visible) */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
-        <div className="space-y-2">
-          <Label>Client *</Label>
-          <Select 
-            value={visitDetails.clientId} 
-            onValueChange={(val) => setVisitDetails({...visitDetails, clientId: val})}
-          >
-            <SelectTrigger><SelectValue placeholder="Select Client" /></SelectTrigger>
-            <SelectContent>
-              {clients.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Date *</Label>
-          <Input type="date" value={visitDetails.visitDate} onChange={e => setVisitDetails({...visitDetails, visitDate: e.target.value})} />
-        </div>
-        <div className="space-y-2">
-          <Label>Visit Type *</Label>
-          <Select 
-            value={visitDetails.visitType} 
-            onValueChange={(val) => setVisitDetails({...visitDetails, visitType: val})}
-          >
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Clinical Review">Clinical Review</SelectItem>
-              <SelectItem value="Outreach Visit">Outreach Visit</SelectItem>
-              <SelectItem value="Case Management">Case Management</SelectItem>
-              <SelectItem value="Psychosocial Session">Psychosocial Session</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Location *</Label>
-          <Select 
-            value={visitDetails.location} 
-            onValueChange={(val) => setVisitDetails({...visitDetails, location: val})}
-          >
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Clinic">Clinic</SelectItem>
-              <SelectItem value="Community">Community</SelectItem>
-              <SelectItem value="Home Visit">Home Visit</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label>Provider(s)</Label>
-          <Input value={visitDetails.provider} onChange={e => setVisitDetails({...visitDetails, provider: e.target.value})} />
-        </div>
-      </section>
+    <StandardForm 
+      title="New Visit Record" 
+      description="Record details for a client encounter, including mandatory screenings and service delivery."
+      actions={formActions}
+      className="max-w-none"
+    >
+      {/* 1. Visit Identification */}
+      <FormSection 
+        title="Visit Identification" 
+        description="Core details about the client and encounter" 
+        icon={<User className="w-5 h-5" />}
+        required
+        defaultOpen={true}
+      >
+        <FormRow columns={3}>
+           <div className="space-y-2">
+              <Label>Client *</Label>
+              <Select 
+                value={visitDetails.clientId} 
+                onValueChange={(val) => setVisitDetails({...visitDetails, clientId: val})}
+              >
+                <SelectTrigger><SelectValue placeholder="Select Client" /></SelectTrigger>
+                <SelectContent>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+           </div>
+           <div className="space-y-2">
+              <Label>Date *</Label>
+              <Input type="date" value={visitDetails.visitDate} onChange={e => setVisitDetails({...visitDetails, visitDate: e.target.value})} />
+           </div>
+           <div className="space-y-2">
+              <Label>Visit Type *</Label>
+              <Select 
+                value={visitDetails.visitType} 
+                onValueChange={(val) => setVisitDetails({...visitDetails, visitType: val})}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="New Clinical Visit">New Clinical Visit</SelectItem>
+                  <SelectItem value="Clinical Review">Clinical Review</SelectItem>
+                  <SelectItem value="Outreach Visit">Outreach Visit</SelectItem>
+                  <SelectItem value="Case Management">Case Management</SelectItem>
+                  <SelectItem value="Psychosocial Session">Psychosocial Session</SelectItem>
+                </SelectContent>
+              </Select>
+           </div>
+           <div className="space-y-2">
+              <Label>Location *</Label>
+              <Select 
+                value={visitDetails.location} 
+                onValueChange={(val) => setVisitDetails({...visitDetails, location: val})}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Clinic">Clinic</SelectItem>
+                  <SelectItem value="Community">Community</SelectItem>
+                  <SelectItem value="Home Visit">Home Visit</SelectItem>
+                </SelectContent>
+              </Select>
+           </div>
+           <div className="space-y-2 md:col-span-2">
+              <Label>Provider(s)</Label>
+              <Input 
+                value={visitDetails.provider} 
+                readOnly 
+                className="bg-gray-50 text-gray-500 cursor-not-allowed"
+              />
+           </div>
+        </FormRow>
+      </FormSection>
 
-      {/* 2. Mandatory Screening Block (Pinned) */}
-      <section className="border-2 border-blue-100 rounded-lg overflow-hidden shadow-sm">
-        <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-blue-800">
-            <AlertCircle className="w-5 h-5" />
-            <h3 className="font-bold">Required Screenings – Must Be Completed</h3>
-          </div>
-          <div className="flex gap-2">
-            <Badge variant={screenings.phq9.completed ? "default" : "outline"} className={screenings.phq9.completed ? "bg-green-600" : "border-blue-300 text-blue-700"}>PHQ-9</Badge>
-            <Badge variant={screenings.gad7.completed ? "default" : "outline"} className={screenings.gad7.completed ? "bg-green-600" : "border-blue-300 text-blue-700"}>GAD-7</Badge>
-            <Badge variant={screenings.assist.completed ? "default" : "outline"} className={screenings.assist.completed ? "bg-green-600" : "border-blue-300 text-blue-700"}>ASSIST</Badge>
-          </div>
-        </div>
-        
-        <div className="p-4 bg-white">
-          <div className="flex border-b mb-4">
+      {/* 2. Mandatory Screenings */}
+      <FormSection 
+        title="Mandatory Screenings" 
+        description="Required assessments for this visit type" 
+        icon={<ClipboardList className="w-5 h-5" />}
+        required
+        status={isScreeningComplete ? 'complete' : 'incomplete'}
+        className="border-l-4 border-l-blue-500"
+      >
+        <div className="flex border-b mb-6 overflow-x-auto">
             <button 
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeScreeningTab === 'phq9' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeScreeningTab === 'phq9' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               onClick={() => setActiveScreeningTab('phq9')}
             >
-              PHQ-9 Depression
+              PHQ-9 Depression {screenings.phq9.completed && '✓'}
             </button>
             <button 
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeScreeningTab === 'gad7' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeScreeningTab === 'gad7' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               onClick={() => setActiveScreeningTab('gad7')}
             >
-              GAD-7 Anxiety
+              GAD-7 Anxiety {screenings.gad7.completed && '✓'}
             </button>
             <button 
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${activeScreeningTab === 'assist' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeScreeningTab === 'assist' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               onClick={() => setActiveScreeningTab('assist')}
             >
-              ASSIST Substance Use
+              ASSIST Substance Use {screenings.assist.completed && '✓'}
             </button>
-          </div>
+        </div>
 
-          <div className="min-h-[300px]">
+        <div className="min-h-[300px] bg-gray-50/50 p-4 rounded-lg border">
             {activeScreeningTab === 'phq9' && (
               <PHQ9Form 
                 initialData={screenings.phq9.data} 
@@ -495,129 +449,102 @@ export function RecordVisitForm({ clients, currentUser, onSuccess, onCancel }: R
                 onChange={(data: any) => handleScreeningUpdate('assist', data)} 
               />
             )}
-          </div>
         </div>
-      </section>
+      </FormSection>
 
-      {/* 3. Service Categories (Grouped and Collapsible) */}
-      <section className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Service Delivery</h3>
-        <div className="grid gap-4">
-          {SERVICE_GROUPS.map(group => {
-            const Icon = group.icon;
-            const isExpanded = expandedGroups.includes(group.id);
-            const selectedCount = group.services.filter(s => selectedServices.includes(s)).length;
-
-            return (
-              <Card key={group.id} className={`transition-all ${isExpanded ? 'ring-1 ring-offset-2 ring-gray-200' : 'hover:bg-gray-50'}`}>
-                <div 
-                  className="p-4 flex items-center justify-between cursor-pointer"
-                  onClick={() => toggleGroup(group.id)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full bg-gray-100 ${group.color}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">{group.title}</h4>
-                      {selectedCount > 0 && (
-                        <span className="text-xs text-green-600 font-medium">{selectedCount} services selected</span>
-                      )}
-                    </div>
-                  </div>
-                  {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                </div>
-                
-                {isExpanded && (
-                  <CardContent className="pt-0 pb-4 pl-16">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {group.services.map(service => (
-                        <div 
-                          key={service} 
-                          className={`flex flex-col space-y-2 ${service === 'PrEP screening' && selectedServices.includes('PrEP screening') ? 'md:col-span-2' : ''}`}
-                        >
-                          <div className="flex items-center space-x-2">
-                            <Checkbox 
-                              id={service} 
-                              checked={selectedServices.includes(service)}
-                              onCheckedChange={() => toggleService(service)}
-                            />
-                            <Label htmlFor={service} className="cursor-pointer font-normal">{service}</Label>
-                          </div>
-                          
-                          {/* Service Specific Forms */}
-                          {service === 'PrEP screening' && selectedServices.includes('PrEP screening') && (
-                             <div className="mt-2 pl-0 pr-0">
-                               <PrepRastForm 
-                                 initialData={screenings.prepRast.data}
-                                 onChange={(data: any) => handleScreeningUpdate('prepRast', data)}
+      {/* 3. Service Delivery */}
+      <FormSection 
+        title="Service Delivery" 
+        description="Select all services provided during this encounter" 
+        icon={<Activity className="w-5 h-5" />}
+      >
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+           {SERVICE_GROUPS.map(group => {
+              const Icon = group.icon;
+              const selectedCount = group.services.filter(s => selectedServices.includes(s)).length;
+              return (
+                <Card key={group.id} className="border hover:border-indigo-300 transition-colors">
+                   <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                         <div className={`p-2 rounded-full bg-gray-100 ${group.color}`}>
+                            <Icon className="w-4 h-4" />
+                         </div>
+                         <h4 className="font-semibold text-sm">{group.title}</h4>
+                      </div>
+                      <div className="space-y-2">
+                         {group.services.map(service => (
+                           <div key={service} className="flex flex-col">
+                             <div className="flex items-start space-x-2">
+                               <Checkbox 
+                                  id={service} 
+                                  checked={selectedServices.includes(service)}
+                                  onCheckedChange={() => toggleService(service)}
+                                  className="mt-0.5"
                                />
+                               <Label htmlFor={service} className="cursor-pointer text-sm font-normal text-gray-700 leading-tight">{service}</Label>
                              </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      </section>
+                             
+                             {/* Embedded Forms */}
+                             {service === 'PrEP screening' && selectedServices.includes('PrEP screening') && (
+                                <div className="mt-2 pl-6 pr-2 py-2 bg-indigo-50 rounded border border-indigo-100">
+                                   <Label className="text-xs font-semibold text-indigo-700 mb-2 block">PrEP RAST Assessment</Label>
+                                   <PrepRastForm 
+                                     initialData={screenings.prepRast.data}
+                                     onChange={(data: any) => handleScreeningUpdate('prepRast', data)}
+                                   />
+                                </div>
+                             )}
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+                </Card>
+              );
+           })}
+         </div>
+      </FormSection>
 
-      {/* 4. Notes & Follow-up */}
-      <section className="space-y-4 bg-gray-50 p-4 rounded-lg">
-        <div className="space-y-2">
-          <Label>Additional Notes</Label>
-          <Textarea 
-            placeholder="Clinical observations, client demeanor, specific concerns..."
-            value={visitDetails.notes}
-            onChange={e => setVisitDetails({...visitDetails, notes: e.target.value})}
-          />
-        </div>
-        <div className="flex items-center space-x-2">
-          <Checkbox 
-            id="followUp"
-            checked={visitDetails.followUpRequired}
-            onCheckedChange={(checked) => setVisitDetails({...visitDetails, followUpRequired: checked === true})}
-          />
-          <Label htmlFor="followUp">Follow-up Required</Label>
-        </div>
-        {visitDetails.followUpRequired && (
-          <div className="space-y-2">
-             <Label>Next Appointment Date</Label>
-             <Input type="date" value={visitDetails.nextAppointment} onChange={e => setVisitDetails({...visitDetails, nextAppointment: e.target.value})} />
-          </div>
-        )}
-      </section>
-
-      {/* 5. Sticky Footer Progress & Actions */}
-      <div className="fixed bottom-0 left-0 right-0 md:left-64 bg-white border-t p-4 shadow-lg z-50 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="text-sm">
-            <span className={isScreeningComplete ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
-              {isScreeningComplete ? "✓ Screenings Complete" : "⚠ Screenings Incomplete"}
-            </span>
-            <span className="mx-2 text-gray-300">|</span>
-            <span className="text-gray-600">{selectedServices.length} Services Selected</span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-          <Button 
-            variant="secondary" 
-            onClick={() => {
-                toast.success("Draft saved");
-                onCancel();
-            }}
-          >
-            Save Draft
-          </Button>
-          <Button onClick={() => setShowSummary(true)} disabled={!isScreeningComplete}>
-            Review & Complete
-          </Button>
-        </div>
-      </div>
-    </div>
+      {/* 4. Outcomes & Follow-up */}
+      <FormSection 
+         title="Outcomes & Follow-up" 
+         description="Clinical notes and next steps" 
+         icon={<Save className="w-5 h-5" />}
+      >
+         <FormRow columns={1}>
+            <div className="space-y-2">
+              <Label>Clinical Notes</Label>
+              <Textarea 
+                placeholder="Enter clinical observations, client demeanor, and specific concerns..."
+                className="min-h-[120px]"
+                value={visitDetails.notes}
+                onChange={e => setVisitDetails({...visitDetails, notes: e.target.value})}
+              />
+            </div>
+            
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 space-y-4">
+               <div className="flex items-center space-x-2">
+                 <Checkbox 
+                   id="followUp"
+                   checked={visitDetails.followUpRequired}
+                   onCheckedChange={(checked) => setVisitDetails({...visitDetails, followUpRequired: checked === true})}
+                 />
+                 <Label htmlFor="followUp" className="font-semibold text-amber-900">Follow-up appointment required</Label>
+               </div>
+               
+               {visitDetails.followUpRequired && (
+                 <div className="pl-6 max-w-xs">
+                    <Label className="text-xs uppercase text-amber-700 font-bold mb-1 block">Next Appointment Date</Label>
+                    <Input 
+                      type="date" 
+                      value={visitDetails.nextAppointment} 
+                      onChange={e => setVisitDetails({...visitDetails, nextAppointment: e.target.value})} 
+                      className="bg-white border-amber-200 focus:border-amber-400"
+                    />
+                 </div>
+               )}
+            </div>
+         </FormRow>
+      </FormSection>
+    </StandardForm>
   );
 }

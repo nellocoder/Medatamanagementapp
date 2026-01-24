@@ -14,6 +14,7 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import {
@@ -36,6 +37,7 @@ export function Sidebar({ currentView, onViewChange, currentUser, onLogout }: Si
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'visits', label: 'Visits', icon: ClipboardList },
+    { id: 'referrals', label: 'Referrals', icon: ExternalLink },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'users', label: 'Users', icon: UserCog, adminOnly: true },
     { id: 'admin', label: 'Admin Panel', icon: Shield, superAdminOnly: true },

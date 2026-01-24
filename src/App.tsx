@@ -7,6 +7,7 @@ import { UserManagement } from './components/UserManagement';
 import { AdminPanel } from './components/AdminPanel';
 import { AuditLog } from './components/AuditLog';
 import { Reports } from './components/Reports';
+import { ReferralDashboard } from './components/ReferralDashboard';
 import { Sidebar } from './components/Sidebar';
 import { Toaster } from './components/ui/sonner';
 import { useInitializeData } from './components/InitializeData';
@@ -66,6 +67,11 @@ export default function App() {
     }
   };
 
+  const handleNavigateToClient = (clientId: string) => {
+    setCurrentView('clients');
+    // Future: Set selected client ID to open detail view automatically
+  };
+
   if (!currentUser) {
     return (
       <>
@@ -103,6 +109,12 @@ export default function App() {
         {currentView === 'admin' && <AdminPanel currentUser={currentUser} />}
         {currentView === 'audit' && <AuditLog currentUser={currentUser} />}
         {currentView === 'reports' && <Reports currentUser={currentUser} />}
+        {currentView === 'referrals' && (
+          <ReferralDashboard 
+            currentUser={currentUser}
+            onNavigateToClient={handleNavigateToClient}
+          />
+        )}
       </div>
       
       <Toaster />

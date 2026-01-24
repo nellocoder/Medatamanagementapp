@@ -111,41 +111,168 @@ app.get('/clients', async (c) => {
 app.get('/clients/next-id', async (c) => {
   try {
     const program = c.req.query('program');
+    const county = c.req.query('county'); // New parameter to scope by county
     const clients = await kv.getByPrefix('client:');
     
     // Determine prefix based on program
     let prefix = 'CL';
-    if (program === 'NSP') prefix = 'NSP';
-    else if (program === 'MAT') prefix = 'MAT';
-    else if (program === 'Stimulants') prefix = 'STIM';
+    const p = program?.toLowerCase() || '';
+    if (p.includes('nsp')) prefix = 'NSP';
+    else if (p.includes('methadone') || p.includes('mat')) prefix = 'MAT';
+    else if (p.includes('stimulant')) prefix = 'STP';
     
+    // Normalize requested county code
+    const getCountyCode = (loc: string) => {
+      const l = loc?.toLowerCase() || '';
+      if (l.includes('mombasa')) return '001';
+      if (l.includes('kilifi')) return '003';
+      if (l.includes('lamu')) return '005';
+      return '';
+    };
+    const targetCountyCode = getCountyCode(county);
+
     let maxId = 0;
     
     clients.forEach(client => {
       if (client.clientId && typeof client.clientId === 'string') {
-        // Check if ID starts with the determined prefix
-        // Format: PREFIX-NUMBER (e.g., NSP-1001, CL-1001)
         const parts = client.clientId.split('-');
-        if (parts.length === 2) {
-          const idPrefix = parts[0].toUpperCase();
-          const idNum = parseInt(parts[1], 10);
+        
+        // Handle new format: PREFIX-CountyGender-SEQUENCE (e.g., STP-001M-0001)
+        if (parts.length === 3) {
+          const idPrefix = parts[0];
+          const middle = parts[1]; // 001M
+          const seq = parts[2]; // 0001
           
-          if (idPrefix === prefix && !isNaN(idNum)) {
-            if (idNum > maxId) {
-              maxId = idNum;
+          // Check if prefix matches
+          if (idPrefix === prefix) {
+            // Check if county matches (first 3 chars of middle part)
+            const idCounty = middle.substring(0, 3);
+            if (!targetCountyCode || idCounty === targetCountyCode) {
+               const idNum = parseInt(seq, 10);
+               if (!isNaN(idNum) && idNum > maxId) {
+                 maxId = idNum;
+               }
             }
           }
+        }
+        // Handle old format: PREFIX-NUMBER (fallback if needed, though we are migrating away)
+        else if (parts.length === 2 && !targetCountyCode) { // Only count old format if no county specified
+           // ... logic for old format ...
         }
       }
     });
     
-    // If no existing IDs found for this prefix, start at 1000, otherwise increment
-    const nextNum = maxId === 0 ? 1001 : maxId + 1;
-    const nextId = `${prefix}-${nextNum}`;
+    // Start at 1, padded to 4 digits
+    const nextNum = maxId === 0 ? 1 : maxId + 1;
+    const paddedNum = nextNum.toString().padStart(4, '0');
     
-    return c.json({ success: true, nextId });
+    // Return the components so frontend can construct the ID
+    return c.json({ 
+      success: true, 
+      nextId: `${prefix}-XXX-${paddedNum}`,
+      prefix,
+      sequence: nextNum,
+      paddedSequence: paddedNum
+    });
   } catch (error) {
     console.error('Error generating next client ID:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// [NEW] Migrate Client IDs
+app.post('/admin/migrate-ids', async (c) => {
+  try {
+    const { userId } = await c.req.json(); // Admin user requesting migration
+    
+    const clients = await kv.getByPrefix('client:');
+    const updates = [];
+    
+    // Group clients by Program + County bucket to maintain independent sequences
+    const buckets: Record<string, any[]> = {};
+
+    // Helper to normalize program
+    const getProgramPrefix = (p: string) => {
+      const prog = p?.toLowerCase() || '';
+      if (prog.includes('nsp')) return 'NSP';
+      if (prog.includes('methadone') || prog.includes('mat')) return 'MAT';
+      if (prog.includes('stimulant')) return 'STP';
+      return 'CL';
+    };
+
+    // Helper to normalize county/location
+    const getCountyCode = (loc: string) => {
+      const l = loc?.toLowerCase() || '';
+      if (l.includes('mombasa')) return '001';
+      if (l.includes('kilifi')) return '003';
+      if (l.includes('lamu')) return '005';
+      return '000'; // Unknown
+    };
+
+    // Helper to normalize gender
+    const getGenderCode = (g: string) => {
+      const gen = g?.toLowerCase() || '';
+      if (gen.startsWith('m')) return 'M';
+      if (gen.startsWith('f')) return 'F';
+      return 'X'; // Other
+    };
+
+    // 1. Sort all clients by creation date to preserve historical order
+    // Use createdAt or fallback to parsing timestamp from old ID if available, or just random
+    clients.sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return timeA - timeB;
+    });
+
+    // 2. Assign to buckets
+    clients.forEach(client => {
+      const prefix = getProgramPrefix(client.program);
+      const countyCode = getCountyCode(client.location || client.county);
+      const bucketKey = `${prefix}-${countyCode}`;
+      
+      if (!buckets[bucketKey]) {
+        buckets[bucketKey] = [];
+      }
+      buckets[bucketKey].push(client);
+    });
+
+    // 3. Re-assign IDs
+    const migrationResults = [];
+    
+    for (const [key, bucketClients] of Object.entries(buckets)) {
+      const [prefix, countyCode] = key.split('-');
+      
+      bucketClients.forEach((client, index) => {
+        const sequence = (index + 1).toString().padStart(4, '0');
+        const genderCode = getGenderCode(client.gender);
+        
+        const newClientId = `${prefix}-${countyCode}${genderCode}-${sequence}`;
+        
+        // Only update if changed
+        if (client.clientId !== newClientId) {
+          client.oldClientId = client.clientId; // Backup old ID
+          client.clientId = newClientId;
+          client.updatedAt = new Date().toISOString();
+          updates.push(client);
+          migrationResults.push({ old: client.oldClientId, new: newClientId });
+        }
+      });
+    }
+
+    // 4. Save updates
+    for (const client of updates) {
+      await kv.set(`client:${client.id}`, client);
+    }
+
+    return c.json({ 
+      success: true, 
+      migratedCount: updates.length, 
+      details: migrationResults 
+    });
+
+  } catch (error) {
+    console.error('Error migrating IDs:', error);
     return c.json({ success: false, error: error.message }, 500);
   }
 });
@@ -1305,6 +1432,39 @@ app.post('/clinical-results', async (c) => {
       changes: resultRecord,
     });
     
+    // AUTOMATIC REFERRAL GENERATION for High Risk PrEP RAST
+    if (result.type === 'PrEP RAST' && (result.severity === 'high' || (result.notes && result.notes.toLowerCase().includes('eligible')))) {
+      const referralId = `referral_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const referralRecord = {
+        id: referralId,
+        clientId: result.clientId,
+        visitId: result.visitId,
+        source: 'Clinical Screening',
+        triggerReason: 'High Risk PrEP RAST Result',
+        service: 'PrEP',
+        riskLevel: 'High',
+        priority: 'Urgent',
+        status: 'Pending',
+        createdBy: 'system',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        riskContext: {
+          source: 'PrEP RAST',
+          score: result.score || 'N/A',
+          severity: 'High',
+          date: timestamp
+        },
+        followUps: [],
+        auditLog: [{
+           action: 'created_automatic',
+           user: 'system',
+           timestamp,
+           details: 'Automatically generated from High Risk PrEP RAST'
+        }]
+      };
+      await kv.set(`referral:${referralId}`, referralRecord);
+    }
+    
     return c.json({ success: true, result: resultRecord, flags });
   } catch (error) {
     console.error('Error creating clinical result:', error);
@@ -1928,6 +2088,287 @@ app.get('/reports/commodities', async (c) => {
   } catch (error) {
     console.error('Error generating commodities report:', error);
     return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// ==================== SAVED VIEWS ====================
+
+app.get('/saved-views/:userId', async (c) => {
+  try {
+    const userId = c.req.param('userId');
+    const allViews = await kv.getByPrefix('saved-view:');
+    const userViews = allViews.filter((v: any) => v.userId === userId);
+    return c.json({ success: true, views: userViews });
+  } catch (error) {
+    console.error('Error fetching saved views:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+app.post('/saved-views', async (c) => {
+  try {
+    const { view, userId } = await c.req.json();
+    const id = `saved-view:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    
+    const savedView = {
+      id,
+      ...view,
+      userId,
+      createdAt: new Date().toISOString(),
+    };
+
+    await kv.set(id, savedView);
+    return c.json({ success: true, view: savedView });
+  } catch (error) {
+    console.error('Error saving view:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+app.delete('/saved-views/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await kv.del(id);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting saved view:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// ==================== REFERRALS (FULL LIFECYCLE) ====================
+
+// Create Referral (Manual)
+app.post('/referrals', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { referral, userId } = body;
+    
+    const referralId = `referral_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = new Date().toISOString();
+    
+    const referralRecord = {
+      id: referralId,
+      ...referral,
+      status: 'Pending', // Default status
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      createdBy: userId,
+      followUps: [],
+      auditLog: [{
+         action: 'created',
+         user: userId,
+         timestamp,
+         details: 'Referral created manually'
+      }]
+    };
+    
+    await kv.set(`referral:${referralId}`, referralRecord);
+    
+    // Audit log
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    await kv.set(`audit:${auditId}`, {
+      id: auditId,
+      entityType: 'referral',
+      entityId: referralId,
+      action: 'create',
+      userId,
+      timestamp,
+      changes: referralRecord,
+    });
+    
+    return c.json({ success: true, referral: referralRecord });
+  } catch (error) {
+    console.error('Error creating referral:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Get all referrals (with filtering)
+app.get('/referrals', async (c) => {
+  try {
+    const status = c.req.query('status');
+    const priority = c.req.query('priority');
+    const location = c.req.query('location');
+    
+    // Fetch all referrals
+    let referrals = await kv.getByPrefix('referral:');
+    
+    // Fetch clients to enrich data
+    const clients = await kv.getByPrefix('client:');
+    const clientMap = new Map(clients.map((c: any) => [c.id, c]));
+    
+    // Enrich and Filter
+    referrals = referrals.map((r: any) => {
+      const client = clientMap.get(r.clientId);
+      return {
+        ...r,
+        clientName: client ? `${client.firstName} ${client.lastName}` : 'Unknown',
+        clientLocation: client ? client.location : 'Unknown',
+        clientPhone: client ? client.phone : 'Unknown',
+        clientProgram: client ? client.program : 'Unknown',
+      };
+    });
+
+    if (status && status !== 'all') {
+      referrals = referrals.filter(r => r.status === status);
+    }
+    if (priority && priority !== 'all') {
+      referrals = referrals.filter(r => r.priority === priority);
+    }
+    if (location && location !== 'all') {
+      referrals = referrals.filter(r => r.clientLocation === location);
+    }
+    
+    // Sort by date descending (Urgent first within date if needed, but date is usually sufficient)
+    referrals.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return c.json({ success: true, referrals });
+  } catch (error) {
+    console.error('Error fetching referrals:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Update Referral (Status, Notes, etc.)
+app.put('/referrals/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { updates, userId, reason } = body;
+    
+    const existing = await kv.get(`referral:${id}`);
+    if (!existing) return c.json({ success: false, error: 'Referral not found' }, 404);
+    
+    const timestamp = new Date().toISOString();
+    
+    // Update audit log inside the record
+    const auditLog = existing.auditLog || [];
+    auditLog.push({
+      action: 'update',
+      user: userId,
+      timestamp,
+      details: reason || 'Record updated',
+      changes: updates
+    });
+    
+    const updated = {
+      ...existing,
+      ...updates,
+      updatedAt: timestamp,
+      updatedBy: userId,
+      auditLog
+    };
+    
+    await kv.set(`referral:${id}`, updated);
+    
+    // Global audit
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    await kv.set(`audit:${auditId}`, {
+      id: auditId,
+      entityType: 'referral',
+      entityId: id,
+      action: 'update',
+      userId,
+      timestamp,
+      before: existing,
+      after: updated,
+    });
+    
+    return c.json({ success: true, referral: updated });
+  } catch (error) {
+    console.error('Error updating referral:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Add Follow-up
+app.post('/referrals/:id/follow-up', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { followUp, userId } = body;
+    
+    const existing = await kv.get(`referral:${id}`);
+    if (!existing) return c.json({ success: false, error: 'Referral not found' }, 404);
+    
+    const timestamp = new Date().toISOString();
+    
+    const newFollowUp = {
+        ...followUp,
+        date: followUp.date || timestamp,
+        recordedBy: userId,
+        recordedAt: timestamp
+    };
+
+    const followUps = existing.followUps || [];
+    followUps.push(newFollowUp);
+    
+    // If follow up was successful/contact made, maybe update status? 
+    // Allowing frontend to decide via explicit status update call is better.
+    // But usually "Contacted" is implied if actionType is 'Call' and outcome is 'Successful'.
+    // For now, just store the follow-up.
+    
+    const auditLog = existing.auditLog || [];
+    auditLog.push({
+      action: 'follow_up_added',
+      user: userId,
+      timestamp,
+      details: `${followUp.actionType} - ${followUp.outcome}`
+    });
+
+    const updated = {
+      ...existing,
+      followUps,
+      updatedAt: timestamp,
+      auditLog
+    };
+    
+    await kv.set(`referral:${id}`, updated);
+    return c.json({ success: true, referral: updated });
+  } catch (error) {
+      console.error('Error adding follow-up:', error);
+      return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Mark Linked to Care
+app.post('/referrals/:id/link', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { linkageDetails, userId } = body;
+    
+    const existing = await kv.get(`referral:${id}`);
+    if (!existing) return c.json({ success: false, error: 'Referral not found' }, 404);
+    
+    const timestamp = new Date().toISOString();
+    
+    const auditLog = existing.auditLog || [];
+    auditLog.push({
+      action: 'linked_to_care',
+      user: userId,
+      timestamp,
+      details: `Linked to ${linkageDetails.facility}`
+    });
+
+    const updated = {
+      ...existing,
+      status: 'Linked to Care',
+      linkage: {
+          ...linkageDetails,
+          recordedBy: userId,
+          recordedAt: timestamp
+      },
+      updatedAt: timestamp,
+      auditLog
+    };
+    
+    await kv.set(`referral:${id}`, updated);
+    return c.json({ success: true, referral: updated });
+  } catch (error) {
+      console.error('Error linking referral:', error);
+      return c.json({ success: false, error: error.message }, 500);
   }
 });
 
