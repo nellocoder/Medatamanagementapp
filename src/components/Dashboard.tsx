@@ -368,7 +368,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Clients by Location</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full relative min-w-0">
+            <div className="h-[300px] w-full" style={{ minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <BarChart data={locationData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -388,7 +388,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Age Demographics</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full relative min-w-0">
+            <div className="h-[300px] w-full" style={{ minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie
