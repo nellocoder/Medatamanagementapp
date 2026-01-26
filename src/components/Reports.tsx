@@ -71,63 +71,70 @@ export function Reports({ currentUser }: ReportsProps) {
   );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-3xl mb-2">Reports & Analytics</h1>
-            <p className="text-gray-600">
-              Comprehensive reporting system for MEWA M&E data
-            </p>
+    <div className={activeTab === 'program' ? '' : "p-8 max-w-7xl mx-auto"}>
+      {/* Header - Hidden when in Program view as it has its own sticky header */}
+      {activeTab !== 'program' && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h1 className="text-3xl mb-2">Reports & Analytics</h1>
+              <p className="text-gray-600">
+                Comprehensive reporting system for MEWA M&E data
+              </p>
+            </div>
+            <Badge variant="outline" className="text-sm">
+              Role: {currentUser?.role}
+            </Badge>
           </div>
-          <Badge variant="outline" className="text-sm">
-            Role: {currentUser?.role}
-          </Badge>
         </div>
-      </div>
+      )}
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        {accessibleCategories.map((category) => {
-          const Icon = category.icon;
-          return (
-            <Card 
-              key={category.id}
-              className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => setActiveTab(category.id)}
-            >
-              <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  <div className={`w-12 h-12 ${category.color} rounded-lg flex items-center justify-center`}>
-                    <Icon className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-1">{category.label}</h3>
-                    <p className="text-xs text-gray-500">{category.description}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Main Reports Area */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-4 w-full max-w-4xl mb-8">
+      {/* Quick Stats - Hidden in Program view to maximize space */}
+      {activeTab !== 'program' && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           {accessibleCategories.map((category) => {
             const Icon = category.icon;
             return (
-              <TabsTrigger key={category.id} value={category.id}>
-                <Icon className="w-4 h-4 mr-2" />
-                {category.label.split(' ')[0]}
-              </TabsTrigger>
+              <Card 
+                key={category.id}
+                className="cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => setActiveTab(category.id)}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-4">
+                    <div className={`w-12 h-12 ${category.color} rounded-lg flex items-center justify-center`}>
+                      <Icon className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">{category.label}</h3>
+                      <p className="text-xs text-gray-500">{category.description}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             );
           })}
-        </TabsList>
+        </div>
+      )}
 
-        <TabsContent value="program">
+      {/* Main Reports Area */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        {/* Navigation Tabs - Hidden in Program view as per spec redesign */}
+        {activeTab !== 'program' && (
+          <TabsList className="grid grid-cols-4 w-full max-w-4xl mb-8">
+            {accessibleCategories.map((category) => {
+              const Icon = category.icon;
+              return (
+                <TabsTrigger key={category.id} value={category.id}>
+                  <Icon className="w-4 h-4 mr-2" />
+                  {category.label.split(' ')[0]}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        )}
+
+        <TabsContent value="program" className="mt-0">
           <ProgramReports 
             currentUser={currentUser}
             canAccessClinical={canAccessClinical}
