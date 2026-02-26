@@ -239,16 +239,6 @@ export function Login({ onLogin }: LoginProps) {
                   </Button>
                 </form>
 
-                <div className="mt-6 pt-6 border-t">
-                  <p className="text-sm text-gray-600 mb-3">Demo Accounts:</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('Admin')}>Admin</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('M&E Officer')}>M&E Officer</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('Data Entry')}>Data Entry</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('Viewer')}>Viewer</Button>
-                  </div>
-                </div>
-
                 <div className="mt-4 pt-4 border-t flex justify-center">
                   <Button 
                     variant="ghost" 
