@@ -1,527 +1,407 @@
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { useState, useEffect } from 'react';
+// UI Components - Ensure these paths match your project structure
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Checkbox } from '../ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+// Icons
 import { 
-  Settings, 
-  Save,
-  Play,
-  Clock,
-  BarChart,
-  Table as TableIcon,
-  Plus,
-  Trash2,
-  Download
+  Target, 
+  Download, 
+  RefreshCw, 
+  Save, 
+  FileText,
+  HeartPulse,
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+// Toast
+import { toast } from 'sonner'; 
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521`;
+const apiHeaders = {
+  'Authorization': `Bearer ${publicAnonKey}`,
+  'Content-Type': 'application/json',
+};
+
+// --- HELPER COMPONENT: TARGET ROW ---
+const TargetRow = ({ 
+  label, 
+  actual, 
+  target, 
+  onTargetChange
+}: { 
+  label: string, 
+  actual: number, 
+  target: number, 
+  onTargetChange: (val: number) => void
+}) => {
+  // Protect against division by zero or undefined
+  const safeActual = actual || 0;
+  const safeTarget = target || 0;
+  const percentage = safeTarget > 0 ? Math.round((safeActual / safeTarget) * 100) : 0;
+  
+  let statusColor = "bg-gray-100 text-gray-600 border-gray-200";
+  
+  if (safeTarget > 0) {
+    if (percentage >= 90) statusColor = "bg-green-100 text-green-800 border-green-200"; 
+    else if (percentage >= 50) statusColor = "bg-yellow-100 text-yellow-800 border-yellow-200";
+    else statusColor = "bg-red-100 text-red-800 border-red-200";
+  }
+
+  return (
+    <tr className="hover:bg-gray-50 border-b last:border-0 transition-colors">
+      <td className="px-4 py-3 text-sm font-medium text-gray-700">{label}</td>
+      <td className="px-4 py-3 text-sm text-center font-bold text-indigo-700 bg-indigo-50/30 rounded-md">
+        {safeActual.toLocaleString()}
+      </td>
+      <td className="px-4 py-3 text-center w-32 bg-gray-50">
+        <Input 
+          type="number" 
+          value={safeTarget || ''} 
+          onChange={(e) => onTargetChange(parseInt(e.target.value) || 0)}
+          className="h-8 text-center text-sm border-gray-300 focus:border-indigo-500 bg-white"
+          placeholder="Set Target"
+        />
+      </td>
+      <td className="px-4 py-3 text-center">
+        <div className="flex items-center justify-center gap-2">
+           <Badge variant="outline" className={`${statusColor} w-16 justify-center font-bold`}>
+             {safeTarget > 0 ? `${percentage}%` : '-'}
+           </Badge>
+        </div>
+      </td>
+    </tr>
+  );
+};
 
 interface CustomReportBuilderProps {
   currentUser: any;
 }
 
 export function CustomReportBuilder({ currentUser }: CustomReportBuilderProps) {
-  const [reportName, setReportName] = useState('');
-  const [selectedIndicators, setSelectedIndicators] = useState<string[]>([]);
-  const [selectedPrograms, setSelectedPrograms] = useState<string[]>([]);
-  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  const [visualizationType, setVisualizationType] = useState('both');
-  const [savedTemplates, setSavedTemplates] = useState<any[]>([]);
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [scheduleFrequency, setScheduleFrequency] = useState('weekly');
-  const [scheduleDay, setScheduleDay] = useState('monday');
-  const [recipientEmails, setRecipientEmails] = useState('');
+  const [period, setPeriod] = useState('quarter');
+  const [program, setProgram] = useState('all'); 
+  const [loading, setLoading] = useState(false);
+  const [targets, setTargets] = useState<Record<string, number>>({});
+  const [actuals, setActuals] = useState<any>(null);
+  const [hivMetrics, setHivMetrics] = useState<any>(null);
 
-  const availableIndicators = [
-    { id: 'total-clients', name: 'Total Clients Served', category: 'General' },
-    { id: 'total-visits', name: 'Total Visits', category: 'General' },
-    { id: 'new-registrations', name: 'New Registrations', category: 'General' },
-    { id: 'active-clients', name: 'Active Clients', category: 'General' },
-    { id: 'nsp-distributed', name: 'NSP Items Distributed', category: 'NSP' },
-    { id: 'nsp-return-ratio', name: 'NSP Return Ratio', category: 'NSP' },
-    { id: 'mat-active', name: 'MAT Active Clients', category: 'MAT' },
-    { id: 'mat-adherence', name: 'MAT Adherence Rate', category: 'MAT' },
-    { id: 'mat-avg-dose', name: 'MAT Average Dose', category: 'MAT' },
-    { id: 'condom-male', name: 'Male Condoms Distributed', category: 'Condom' },
-    { id: 'condom-female', name: 'Female Condoms Distributed', category: 'Condom' },
-    { id: 'mh-screenings', name: 'Mental Health Screenings', category: 'Mental Health' },
-    { id: 'phq9-severe', name: 'PHQ-9 Severe Cases', category: 'Mental Health' },
-    { id: 'gad7-severe', name: 'GAD-7 Severe Cases', category: 'Mental Health' },
-    { id: 'psycho-sessions', name: 'Psychosocial Sessions', category: 'Psychosocial' },
-    { id: 'hiv-tests', name: 'HIV Tests Conducted', category: 'Clinical' },
-    { id: 'sti-screenings', name: 'STI Screenings', category: 'Clinical' },
-    { id: 'high-risk-clients', name: 'High Risk Client Count', category: 'Risk' },
-    { id: 'follow-up-rate', name: 'Follow-up Completion Rate', category: 'General' },
-  ];
+  useEffect(() => {
+    fetchActuals();
+    fetchHivMetrics();
+  }, [period, program]);
 
-  const programs = [
-    { id: 'nsp', name: 'NSP' },
-    { id: 'mat', name: 'MAT' },
-    { id: 'condom', name: 'Condom Distribution' },
-    { id: 'mental-health', name: 'Mental Health' },
-    { id: 'psychosocial', name: 'Psychosocial' },
-    { id: 'clinical', name: 'Clinical' },
-    { id: 'outreach', name: 'Outreach' },
-  ];
-
-  const locations = [
-    { id: 'mombasa', name: 'Mombasa' },
-    { id: 'lamu', name: 'Lamu' },
-    { id: 'kilifi', name: 'Kilifi' },
-  ];
-
-  const toggleIndicator = (id: string) => {
-    setSelectedIndicators(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  const toggleProgram = (id: string) => {
-    setSelectedPrograms(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
-  };
-
-  const toggleLocation = (id: string) => {
-    setSelectedLocations(prev =>
-      prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]
-    );
-  };
-
-  const handleSaveTemplate = () => {
-    if (!reportName) {
-      toast.error('Please provide a report name');
-      return;
-    }
-    if (selectedIndicators.length === 0) {
-      toast.error('Please select at least one indicator');
-      return;
-    }
-
-    const template = {
-      id: Date.now().toString(),
-      name: reportName,
-      indicators: selectedIndicators,
-      programs: selectedPrograms,
-      locations: selectedLocations,
-      visualizationType,
-      schedule: scheduleEnabled ? {
-        frequency: scheduleFrequency,
-        day: scheduleDay,
-        recipients: recipientEmails,
-      } : null,
-      createdBy: currentUser.name,
-      createdAt: new Date().toISOString(),
-    };
-
-    setSavedTemplates([...savedTemplates, template]);
-    toast.success('Report template saved successfully');
-    
-    // Reset form
-    setReportName('');
-    setSelectedIndicators([]);
-    setSelectedPrograms([]);
-    setSelectedLocations([]);
-    setScheduleEnabled(false);
-  };
-
-  const handleRunReport = () => {
-    if (selectedIndicators.length === 0) {
-      toast.error('Please select at least one indicator');
-      return;
-    }
-    
+  const fetchHivMetrics = async () => {
     try {
-      // Generate a simple HTML report
-      const htmlReport = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 40px; }
-            h1 { color: #4f46e5; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; }
-            h2 { color: #333; margin-top: 30px; }
-            .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; margin: 2px; background: #e0e7ff; color: #4338ca; }
-            .logo { font-size: 24px; font-weight: bold; color: #4f46e5; margin-bottom: 20px; }
-            .info { background: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="logo">MEWA M&E System</div>
-          <h1>Custom Report${reportName ? `: ${reportName}` : ''}</h1>
-          <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
-          <p><strong>Generated by:</strong> ${currentUser.name} (${currentUser.role})</p>
+      const res = await fetch(`${API_BASE}/hiv-metrics`, { headers: apiHeaders });
+      const data = await res.json();
+      if (data.success) setHivMetrics(data.metrics);
+    } catch (err) {
+      console.error('Error fetching HIV metrics for report builder:', err);
+    }
+  };
 
-          <div class="info">
-            <h3>Report Configuration</h3>
-            <p><strong>Selected Indicators:</strong> ${selectedIndicators.length}</p>
-            ${selectedPrograms.length > 0 ? `<p><strong>Programs:</strong> ${selectedPrograms.join(', ')}</p>` : ''}
-            ${selectedLocations.length > 0 ? `<p><strong>Locations:</strong> ${selectedLocations.join(', ')}</p>` : ''}
-            <p><strong>Visualization:</strong> ${visualizationType}</p>
-          </div>
-
-          <h2>Selected Indicators</h2>
-          ${selectedIndicators.map(id => {
-            const indicator = availableIndicators.find(i => i.id === id);
-            return `<span class="badge">${indicator?.name || id}</span>`;
-          }).join(' ')}
-
-          <h2>Report Data</h2>
-          <p style="padding: 40px; text-align: center; color: #666; background: #f9fafb; border-radius: 8px;">
-            This is a custom report preview. In a production system, this would contain:<br><br>
-            • Real-time data for selected indicators<br>
-            • Charts and visualizations<br>
-            • Detailed tables with filterable data<br>
-            • Trend analysis and comparisons
-          </p>
-
-          <p style="margin-top: 60px; color: #666; font-size: 12px; border-top: 1px solid #ddd; padding-top: 20px;">
-            Generated by MEWA M&E System on ${new Date().toLocaleString()}
-          </p>
-        </body>
-        </html>
-      `;
-
-      const blob = new Blob([htmlReport], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const filename = reportName ? reportName.replace(/\s+/g, '_') : 'custom_report';
-      a.download = `${filename}_${new Date().toISOString().split('T')[0]}.html`;
-      a.click();
-      URL.revokeObjectURL(url);
-      
-      toast.success('Custom report generated! Open the HTML file to view.');
+  const fetchActuals = async () => {
+    setLoading(true);
+    try {
+      // MOCK DATA: This simulates the data coming from your services
+      // In the next step, we can link this to real Supabase counts
+      setTimeout(() => {
+        setActuals({
+          programmatic: {
+            stimulant_users: 120,
+            nsp_clients: 450,
+            mat_clients: 380,
+            needles_dist: 25000,
+            mat_retention: 310
+          },
+          clinical: {
+            hiv_tested: 850,
+            hiv_positive: 68,
+            linked_care: 65,
+            started_art: 62,
+            prep_new: 45,
+            prep_curr: 120,
+            sti_screen: 320,
+            sti_treat: 45,
+            tb_screen: 850,
+            tb_treat: 5
+          },
+          mental: {
+            phq9: 410,
+            gad7: 380,
+            assist: 650,
+            treated_dep: 25,
+            treated_anx: 18
+          },
+          social: {
+            gbv_cases: 25,
+            paralegal: 60,
+            id_cards: 15,
+            family_integration: 12,
+            referrals: 85
+          }
+        });
+        setLoading(false);
+      }, 800);
     } catch (error) {
-      console.error('Error generating report:', error);
-      toast.error('Failed to generate report');
+      console.error(error);
+      toast.error("Failed to load actual data");
+      setLoading(false);
     }
   };
 
-  const handleDeleteTemplate = (id: string) => {
-    setSavedTemplates(savedTemplates.filter(t => t.id !== id));
-    toast.success('Template deleted');
+  const handleTargetUpdate = (key: string, value: number) => {
+    setTargets(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleLoadTemplate = (template: any) => {
-    setReportName(template.name);
-    setSelectedIndicators(template.indicators);
-    setSelectedPrograms(template.programs);
-    setSelectedLocations(template.locations);
-    setVisualizationType(template.visualizationType);
-    if (template.schedule) {
-      setScheduleEnabled(true);
-      setScheduleFrequency(template.schedule.frequency);
-      setScheduleDay(template.schedule.day);
-      setRecipientEmails(template.schedule.recipients);
-    }
-    toast.success('Template loaded');
+  const handleSaveTargets = () => {
+    toast.success("Targets saved locally (Demo mode)");
   };
-
-  const groupedIndicators = availableIndicators.reduce((acc, indicator) => {
-    if (!acc[indicator.category]) {
-      acc[indicator.category] = [];
-    }
-    acc[indicator.category].push(indicator);
-    return acc;
-  }, {} as Record<string, typeof availableIndicators>);
 
   return (
     <div className="space-y-6">
-      {/* Report Builder */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5" />
-            Custom Report Builder
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Report Name */}
-          <div>
-            <Label>Report Name *</Label>
-            <Input
-              placeholder="e.g., Monthly Donor Report, Weekly Program Summary"
-              value={reportName}
-              onChange={(e) => setReportName(e.target.value)}
-            />
-          </div>
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Custom Target Report</h2>
+           <p className="text-gray-500 text-sm">
+             Compare actual service delivery against manual targets.
+           </p>
+        </div>
+        <div className="flex gap-2">
+           <Button variant="outline" onClick={fetchActuals} disabled={loading}>
+             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+             Refresh Data
+           </Button>
+           <Button onClick={handleSaveTargets}>
+             <Save className="w-4 h-4 mr-2" />
+             Save Targets
+           </Button>
+        </div>
+      </div>
 
-          {/* Indicator Selection */}
-          <div>
-            <Label className="mb-3 block">Select Indicators *</Label>
-            <div className="space-y-4 border rounded-lg p-4 max-h-96 overflow-y-auto">
-              {Object.entries(groupedIndicators).map(([category, indicators]) => (
-                <div key={category}>
-                  <p className="font-semibold text-sm mb-2">{category}</p>
-                  <div className="space-y-2 ml-4">
-                    {indicators.map(indicator => (
-                      <div key={indicator.id} className="flex items-center gap-2">
-                        <Checkbox
-                          checked={selectedIndicators.includes(indicator.id)}
-                          onCheckedChange={() => toggleIndicator(indicator.id)}
-                        />
-                        <label className="text-sm cursor-pointer" onClick={() => toggleIndicator(indicator.id)}>
-                          {indicator.name}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              {selectedIndicators.length} indicator{selectedIndicators.length !== 1 ? 's' : ''} selected
-            </p>
-          </div>
+      {/* FILTERS */}
+      <Card className="bg-gray-50/50 border-indigo-100">
+        <CardContent className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+           <div>
+              <Label className="text-xs uppercase text-gray-500 mb-1 block">Reporting Period</Label>
+              <Select value={period} onValueChange={setPeriod}>
+                 <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                 <SelectContent>
+                    <SelectItem value="month">Current Month</SelectItem>
+                    <SelectItem value="quarter">Current Quarter</SelectItem>
+                    <SelectItem value="year">Fiscal Year</SelectItem>
+                 </SelectContent>
+              </Select>
+           </div>
+           <div>
+              <Label className="text-xs uppercase text-gray-500 mb-1 block">Program Focus</Label>
+              <Select value={program} onValueChange={setProgram}>
+                 <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                 <SelectContent>
+                    <SelectItem value="all">All Services</SelectItem>
+                    <SelectItem value="stimulant">Stimulant Program</SelectItem>
+                    <SelectItem value="nsp">NSP Program</SelectItem>
+                    <SelectItem value="mat">MAT Program</SelectItem>
+                 </SelectContent>
+              </Select>
+           </div>
+        </CardContent>
+      </Card>
 
-          {/* Program Filters */}
-          <div>
-            <Label className="mb-3 block">Filter by Programs (Optional)</Label>
-            <div className="flex flex-wrap gap-2">
-              {programs.map(program => (
-                <Badge
-                  key={program.id}
-                  variant={selectedPrograms.includes(program.id) ? 'default' : 'outline'}
-                  className="cursor-pointer"
-                  onClick={() => toggleProgram(program.id)}
-                >
-                  {program.name}
-                </Badge>
-              ))}
-            </div>
-          </div>
+      {/* TABLES */}
+      {loading ? (
+        <div className="py-20 text-center text-gray-400">Loading data...</div>
+      ) : actuals ? (
+        <Tabs defaultValue="program" className="w-full">
+          <TabsList className="bg-white border w-full justify-start overflow-x-auto h-auto p-1">
+             <TabsTrigger value="program" className="py-2">Program Targets</TabsTrigger>
+             <TabsTrigger value="clinical" className="py-2">Clinical (HIV/TB)</TabsTrigger>
+             <TabsTrigger value="hiv_art" className="py-2">
+               <HeartPulse className="w-3.5 h-3.5 mr-1" />
+               HIV/ART Cascade
+             </TabsTrigger>
+             <TabsTrigger value="mental" className="py-2">Mental Health</TabsTrigger>
+             <TabsTrigger value="social" className="py-2">Social & Legal</TabsTrigger>
+          </TabsList>
 
-          {/* Location Filters */}
-          <div>
-            <Label className="mb-3 block">Filter by Locations (Optional)</Label>
-            <div className="flex flex-wrap gap-2">
-              {locations.map(location => (
-                <Badge
-                  key={location.id}
-                  variant={selectedLocations.includes(location.id) ? 'default' : 'outline'}
-                  className="cursor-pointer"
-                  onClick={() => toggleLocation(location.id)}
-                >
-                  {location.name}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          {/* Visualization Type */}
-          <div>
-            <Label>Visualization Type</Label>
-            <Select value={visualizationType} onValueChange={setVisualizationType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="charts">Charts Only</SelectItem>
-                <SelectItem value="tables">Tables Only</SelectItem>
-                <SelectItem value="both">Charts & Tables</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Schedule Settings */}
-          <div className="border-t pt-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Checkbox
-                checked={scheduleEnabled}
-                onCheckedChange={setScheduleEnabled}
-              />
-              <Label className="cursor-pointer" onClick={() => setScheduleEnabled(!scheduleEnabled)}>
-                Schedule Automated Report Delivery
-              </Label>
-            </div>
-
-            {scheduleEnabled && (
-              <div className="space-y-4 ml-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Frequency</Label>
-                    <Select value={scheduleFrequency} onValueChange={setScheduleFrequency}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="daily">Daily</SelectItem>
-                        <SelectItem value="weekly">Weekly</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="quarterly">Quarterly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {scheduleFrequency === 'weekly' && (
-                    <div>
-                      <Label>Day of Week</Label>
-                      <Select value={scheduleDay} onValueChange={setScheduleDay}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="monday">Monday</SelectItem>
-                          <SelectItem value="tuesday">Tuesday</SelectItem>
-                          <SelectItem value="wednesday">Wednesday</SelectItem>
-                          <SelectItem value="thursday">Thursday</SelectItem>
-                          <SelectItem value="friday">Friday</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <Label>Recipient Email Addresses (comma-separated)</Label>
-                  <Input
-                    placeholder="email1@example.com, email2@example.com"
-                    value={recipientEmails}
-                    onChange={(e) => setRecipientEmails(e.target.value)}
-                  />
-                </div>
+          {/* 1. PROGRAM SPECIFIC */}
+          <TabsContent value="program" className="mt-4">
+            <Card>
+              <CardHeader className="pb-2 border-b">
+                 <CardTitle className="text-base">Key Program Indicators</CardTitle>
+                 <CardDescription>Targets for Stimulant, NSP, and MAT enrollment</CardDescription>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                   <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold border-b">
+                      <tr>
+                         <th className="px-4 py-3 w-1/2">Indicator</th>
+                         <th className="px-4 py-3 text-center">Actual</th>
+                         <th className="px-4 py-3 text-center w-32">Target</th>
+                         <th className="px-4 py-3 text-center">Achieved</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      <TargetRow label="Stimulant Users Reached" actual={actuals.programmatic?.stimulant_users} target={targets['prog_stim']} onTargetChange={(v) => handleTargetUpdate('prog_stim', v)} />
+                      <TargetRow label="NSP Clients Active" actual={actuals.programmatic?.nsp_clients} target={targets['prog_nsp']} onTargetChange={(v) => handleTargetUpdate('prog_nsp', v)} />
+                      <TargetRow label="MAT Clients Enrolled" actual={actuals.programmatic?.mat_clients} target={targets['prog_mat']} onTargetChange={(v) => handleTargetUpdate('prog_mat', v)} />
+                      <TargetRow label="Needles/Syringes Distributed" actual={actuals.programmatic?.needles_dist} target={targets['prog_needles']} onTargetChange={(v) => handleTargetUpdate('prog_needles', v)} />
+                      <TargetRow label="MAT Retention (6 Months)" actual={actuals.programmatic?.mat_retention} target={targets['prog_retention']} onTargetChange={(v) => handleTargetUpdate('prog_retention', v)} />
+                   </tbody>
+                </table>
               </div>
-            )}
-          </div>
+            </Card>
+          </TabsContent>
 
-          {/* Action Buttons */}
-          <div className="flex gap-2 pt-4 border-t">
-            <Button onClick={handleRunReport}>
-              <Play className="w-4 h-4 mr-2" />
-              Run Report Now
-            </Button>
-            <Button variant="outline" onClick={handleSaveTemplate}>
-              <Save className="w-4 h-4 mr-2" />
-              Save as Template
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          {/* 2. CLINICAL SERVICES */}
+          <TabsContent value="clinical" className="mt-4">
+            <Card>
+              <CardHeader className="pb-2 border-b">
+                 <CardTitle className="text-base">Clinical Services Cascade</CardTitle>
+                 <CardDescription>HIV, PrEP, STI, and TB Services</CardDescription>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                   <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold border-b">
+                      <tr>
+                         <th className="px-4 py-3 w-1/2">Indicator</th>
+                         <th className="px-4 py-3 text-center">Actual</th>
+                         <th className="px-4 py-3 text-center w-32">Target</th>
+                         <th className="px-4 py-3 text-center">Achieved</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      <TargetRow label="HIV Testing Services (HTS)" actual={actuals.clinical?.hiv_tested} target={targets['hts_tested']} onTargetChange={(v) => handleTargetUpdate('hts_tested', v)} />
+                      <TargetRow label="Identified HIV Positive" actual={actuals.clinical?.hiv_positive} target={targets['hts_pos']} onTargetChange={(v) => handleTargetUpdate('hts_pos', v)} />
+                      <TargetRow label="Linked to ART Care" actual={actuals.clinical?.started_art} target={targets['art_start']} onTargetChange={(v) => handleTargetUpdate('art_start', v)} />
+                      <TargetRow label="New PrEP Initiations" actual={actuals.clinical?.prep_new} target={targets['prep_new']} onTargetChange={(v) => handleTargetUpdate('prep_new', v)} />
+                      <TargetRow label="STI Screening" actual={actuals.clinical?.sti_screen} target={targets['sti_screen']} onTargetChange={(v) => handleTargetUpdate('sti_screen', v)} />
+                      <TargetRow label="TB Screening" actual={actuals.clinical?.tb_screen} target={targets['tb_screen']} onTargetChange={(v) => handleTargetUpdate('tb_screen', v)} />
+                   </tbody>
+                </table>
+              </div>
+            </Card>
+          </TabsContent>
 
-      {/* Saved Templates */}
-      {savedTemplates.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TableIcon className="w-5 h-5" />
-              Saved Report Templates
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {savedTemplates.map(template => (
-                <div key={template.id} className="p-4 border rounded-lg">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h4 className="font-semibold">{template.name}</h4>
-                        {template.schedule && (
-                          <Badge variant="outline" className="text-xs">
-                            <Clock className="w-3 h-3 mr-1" />
-                            Scheduled: {template.schedule.frequency}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        <Badge variant="outline" className="text-xs">
-                          {template.indicators.length} indicators
-                        </Badge>
-                        {template.programs.length > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            {template.programs.length} programs
-                          </Badge>
-                        )}
-                        {template.locations.length > 0 && (
-                          <Badge variant="outline" className="text-xs">
-                            {template.locations.length} locations
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        Created by {template.createdBy} on {new Date(template.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleLoadTemplate(template)}
-                      >
-                        Load
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteTemplate(template.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+          {/* 3. HIV/ART CASCADE */}
+          <TabsContent value="hiv_art" className="mt-4">
+            <Card>
+              <CardHeader className="pb-2 border-b">
+                 <CardTitle className="text-base flex items-center gap-2">
+                   <HeartPulse className="w-4 h-4 text-red-500" />
+                   HIV/ART Cascade Indicators
+                 </CardTitle>
+                 <CardDescription>PEPFAR MER-aligned HIV treatment cascade targets (live data from HIV module)</CardDescription>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                {hivMetrics ? (
+                  <table className="w-full text-left border-collapse">
+                     <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold border-b">
+                        <tr>
+                           <th className="px-4 py-3 w-1/2">Indicator</th>
+                           <th className="px-4 py-3 text-center">Actual</th>
+                           <th className="px-4 py-3 text-center w-32">Target</th>
+                           <th className="px-4 py-3 text-center">Achieved</th>
+                        </tr>
+                     </thead>
+                     <tbody>
+                        <TargetRow label="PLHIV Identified (HIV+)" actual={hivMetrics.totalHivPositive} target={targets['hiv_plhiv']} onTargetChange={(v) => handleTargetUpdate('hiv_plhiv', v)} />
+                        <TargetRow label="TX_NEW (ART Initiated)" actual={hivMetrics.totalInitiated} target={targets['hiv_tx_new']} onTargetChange={(v) => handleTargetUpdate('hiv_tx_new', v)} />
+                        <TargetRow label="TX_CURR (Currently on ART)" actual={hivMetrics.activeOnArt} target={targets['hiv_tx_curr']} onTargetChange={(v) => handleTargetUpdate('hiv_tx_curr', v)} />
+                        <TargetRow label="VL Tested (TX_PVLS Denominator)" actual={hivMetrics.totalTested} target={targets['hiv_vl_tested']} onTargetChange={(v) => handleTargetUpdate('hiv_vl_tested', v)} />
+                        <TargetRow label="VL Suppressed (<1,000 c/mL)" actual={hivMetrics.suppressed} target={targets['hiv_vl_supp']} onTargetChange={(v) => handleTargetUpdate('hiv_vl_supp', v)} />
+                        <TargetRow label="VL Unsuppressed" actual={hivMetrics.unsuppressed} target={targets['hiv_vl_unsupp']} onTargetChange={(v) => handleTargetUpdate('hiv_vl_unsupp', v)} />
+                        <TargetRow label="Due for VL Testing" actual={hivMetrics.dueForVl} target={targets['hiv_vl_due']} onTargetChange={(v) => handleTargetUpdate('hiv_vl_due', v)} />
+                        <TargetRow label="Lost to Follow-Up (LTFU)" actual={hivMetrics.lostToFollowUp} target={targets['hiv_ltfu']} onTargetChange={(v) => handleTargetUpdate('hiv_ltfu', v)} />
+                        <TargetRow label="HIV Clinical Visits" actual={hivMetrics.totalVisits} target={targets['hiv_visits']} onTargetChange={(v) => handleTargetUpdate('hiv_visits', v)} />
+                        <TargetRow label="Adherence Assessments" actual={hivMetrics.totalAdherenceRecords} target={targets['hiv_adherence']} onTargetChange={(v) => handleTargetUpdate('hiv_adherence', v)} />
+                     </tbody>
+                  </table>
+                ) : (
+                  <div className="py-12 text-center text-gray-400">
+                    <HeartPulse className="w-8 h-8 mx-auto text-gray-300 mb-3" />
+                    <p className="text-sm">Loading HIV metrics...</p>
+                    <p className="text-xs mt-1">Data is fetched from the HIV Management module</p>
+                  </div>
+                )}
+              </div>
+              {hivMetrics && (
+                <div className="px-4 py-3 border-t bg-gray-50/50">
+                  <div className="flex items-center gap-6 text-xs text-gray-500">
+                    <span>Suppression Rate: <strong className="text-indigo-700">{hivMetrics.suppressionRate}%</strong></span>
+                    <span>Retention Rate: <strong className="text-indigo-700">{hivMetrics.retentionRate}%</strong></span>
+                    <span>ART Coverage: <strong className="text-indigo-700">
+                      {hivMetrics.totalHivPositive > 0 ? Math.round((hivMetrics.activeOnArt / hivMetrics.totalHivPositive) * 100) : 0}%
+                    </strong></span>
                   </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              )}
+            </Card>
+          </TabsContent>
 
-      {/* Donor Report Templates */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Pre-configured Donor Report Templates</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 border rounded-lg hover:border-indigo-500 transition-colors cursor-pointer">
-              <h4 className="font-semibold mb-2">EJAF Report Template</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Quarterly report for Elton John AIDS Foundation
-              </p>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Use Template
-              </Button>
-            </div>
+          {/* 4. MENTAL HEALTH */}
+          <TabsContent value="mental" className="mt-4">
+            <Card>
+              <CardHeader className="pb-2 border-b">
+                 <CardTitle className="text-base">Mental Health & Psychosocial</CardTitle>
+                 <CardDescription>Screenings (PHQ-9, GAD-7, ASSIST) & Treatment</CardDescription>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                   <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold border-b">
+                      <tr>
+                         <th className="px-4 py-3 w-1/2">Indicator</th>
+                         <th className="px-4 py-3 text-center">Actual</th>
+                         <th className="px-4 py-3 text-center w-32">Target</th>
+                         <th className="px-4 py-3 text-center">Achieved</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      <TargetRow label="Depression Screening (PHQ-9)" actual={actuals.mental?.phq9} target={targets['mh_phq9']} onTargetChange={(v) => handleTargetUpdate('mh_phq9', v)} />
+                      <TargetRow label="Anxiety Screening (GAD-7)" actual={actuals.mental?.gad7} target={targets['mh_gad7']} onTargetChange={(v) => handleTargetUpdate('mh_gad7', v)} />
+                      <TargetRow label="Substance Use Screening (ASSIST)" actual={actuals.mental?.assist} target={targets['mh_assist']} onTargetChange={(v) => handleTargetUpdate('mh_assist', v)} />
+                      <TargetRow label="Depression Treatment Initiated" actual={actuals.mental?.treated_dep} target={targets['mh_tx_dep']} onTargetChange={(v) => handleTargetUpdate('mh_tx_dep', v)} />
+                   </tbody>
+                </table>
+              </div>
+            </Card>
+          </TabsContent>
 
-            <div className="p-4 border rounded-lg hover:border-indigo-500 transition-colors cursor-pointer">
-              <h4 className="font-semibold mb-2">Mainline Report Template</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Monthly program performance report
-              </p>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Use Template
-              </Button>
-            </div>
-
-            <div className="p-4 border rounded-lg hover:border-indigo-500 transition-colors cursor-pointer">
-              <h4 className="font-semibold mb-2">Global Fund Report Template</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Annual program review and outcomes
-              </p>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Use Template
-              </Button>
-            </div>
-
-            <div className="p-4 border rounded-lg hover:border-indigo-500 transition-colors cursor-pointer">
-              <h4 className="font-semibold mb-2">Internal MEWA Report</h4>
-              <p className="text-sm text-gray-600 mb-3">
-                Comprehensive program monitoring
-              </p>
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Use Template
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          {/* 5. SOCIAL & LEGAL */}
+          <TabsContent value="social" className="mt-4">
+             <Card>
+              <CardHeader className="pb-2 border-b">
+                 <CardTitle className="text-base">Social, Legal & Structural Interventions</CardTitle>
+                 <CardDescription>GBV, Paralegal, and Reintegration Services</CardDescription>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                   <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold border-b">
+                      <tr>
+                         <th className="px-4 py-3 w-1/2">Indicator</th>
+                         <th className="px-4 py-3 text-center">Actual</th>
+                         <th className="px-4 py-3 text-center w-32">Target</th>
+                         <th className="px-4 py-3 text-center">Achieved</th>
+                      </tr>
+                   </thead>
+                   <tbody>
+                      <TargetRow label="GBV Screening & Support" actual={actuals.social?.gbv_cases} target={targets['soc_gbv']} onTargetChange={(v) => handleTargetUpdate('soc_gbv', v)} />
+                      <TargetRow label="Paralegal Cases Handled" actual={actuals.social?.paralegal} target={targets['soc_paralegal']} onTargetChange={(v) => handleTargetUpdate('soc_paralegal', v)} />
+                      <TargetRow label="ID Card Registration Support" actual={actuals.social?.id_cards} target={targets['soc_id']} onTargetChange={(v) => handleTargetUpdate('soc_id', v)} />
+                      <TargetRow label="Family Integration Sessions" actual={actuals.social?.family_integration} target={targets['soc_family']} onTargetChange={(v) => handleTargetUpdate('soc_family', v)} />
+                      <TargetRow label="External Referrals Made" actual={actuals.social?.referrals} target={targets['soc_ref']} onTargetChange={(v) => handleTargetUpdate('soc_ref', v)} />
+                   </tbody>
+                </table>
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      ) : null}
     </div>
   );
 }

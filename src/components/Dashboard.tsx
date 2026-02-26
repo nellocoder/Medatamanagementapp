@@ -92,31 +92,39 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
   const loadDashboardData = async (isAutoRefresh = false) => {
     try {
       if (!projectId || !publicAnonKey) {
+        console.warn('Supabase project ID or Anon Key missing');
         setLoading(false);
         return;
       }
 
       // 1. Fetch Metrics (Server-Side Calculation)
-      // Pass filters to the server so it calculates numbers correctly
       const metricsParams = new URLSearchParams({
         location: filters.location,
         program: filters.program,
         dateRange: filters.dateRange
       });
 
-      const metricsRes = await fetch(
+      // We attempt to fetch. If the server is sleeping (cold start), this might time out or fail.
+      const metricsPromise = fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/metrics?${metricsParams}`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
-      // 2. Fetch Recent Visits (Limit 10 for feed)
-      const visitsRes = await fetch(
+      // 2. Fetch Recent Visits
+      const visitsPromise = fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/visits?limit=10`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
-      if (!metricsRes.ok || !visitsRes.ok) {
-        throw new Error('Server returned an error');
+      const [metricsRes, visitsRes] = await Promise.all([metricsPromise, visitsPromise]);
+
+      if (!metricsRes.ok) {
+         const errorText = await metricsRes.text();
+         throw new Error(`Metrics API Error: ${metricsRes.status} ${errorText}`);
+      }
+      if (!visitsRes.ok) {
+         const errorText = await visitsRes.text();
+         throw new Error(`Visits API Error: ${visitsRes.status} ${errorText}`);
       }
 
       const [metricsData, visitsData] = await Promise.all([
@@ -127,7 +135,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
       if (metricsData.success) setMetrics(metricsData.metrics);
       if (visitsData.success) setRecentVisits(visitsData.visits);
 
-      // Simulate Sync Status (Backend doesn't provide this yet)
+      // Simulate Sync Status
       setSyncStatus({
         'Mombasa': { status: 'synced', lastSync: new Date(Date.now() - 300000), nextSync: 5 },
         'Lamu': { status: 'synced', lastSync: new Date(Date.now() - 60000), nextSync: 15 },
@@ -137,7 +145,13 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       if (!isAutoRefresh) {
-        toast.error('Failed to update dashboard. Server might be unreachable.');
+        // Only show toast on manual load or initial load to avoid spamming
+        // "TypeError: Failed to fetch" is the browser's generic network error
+        if (error instanceof TypeError && error.message === 'Failed to fetch') {
+           toast.error('Cannot connect to server. Please check your internet connection.');
+        } else {
+           toast.error('Failed to update dashboard data.');
+        }
       }
     } finally {
       setLoading(false);
@@ -171,6 +185,7 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
     return (
       <div className="p-4 md:p-8 flex flex-col items-center justify-center min-h-screen bg-gray-50 space-y-4">
         <div className="p-6 bg-white rounded-2xl shadow-sm text-center max-w-md">
+          {/* Use AlertTriangle instead of AlertCircle if uncertain */}
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Failed to load dashboard</h2>
           <p className="text-gray-600 mb-6">There was a problem connecting to the server. Please check your internet connection and try again.</p>
@@ -359,54 +374,67 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
         </CardContent>
       </Card>
 
-      {/* Charts Section - FIXED WIDTH ERROR */}
+      {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Clients by Location */}
-        <Card className="rounded-2xl shadow-sm border-0 bg-white min-w-0 overflow-hidden">
+        <Card className="rounded-2xl shadow-sm border-0 bg-white overflow-hidden">
           <CardHeader>
             <CardTitle>Clients by Location</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <BarChart data={locationData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div style={{ width: '100%', height: 300 }}>
+              {locationData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                  <BarChart data={locationData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip cursor={{ fill: 'transparent' }} />
+                    <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400">
+                  No location data available
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
         {/* Age Groups */}
-        <Card className="rounded-2xl shadow-sm border-0 bg-white min-w-0 overflow-hidden">
+        <Card className="rounded-2xl shadow-sm border-0 bg-white overflow-hidden">
           <CardHeader>
             <CardTitle>Age Demographics</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <PieChart>
-                  <Pie
-                    data={ageData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    dataKey="value"
-                  >
-                    {ageData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[Object.keys(COLORS)[index % 5] as keyof typeof COLORS]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+             <div style={{ width: '100%', height: 300 }}>
+              {ageData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                  <PieChart>
+                    <Pie
+                      data={ageData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {ageData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[Object.keys(COLORS)[index % Object.keys(COLORS).length] as keyof typeof COLORS]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend verticalAlign="bottom" height={36}/>
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400">
+                  No age data available
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

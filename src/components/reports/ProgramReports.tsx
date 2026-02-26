@@ -1,34 +1,103 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Input } from '../ui/input';
 import { 
   Download, 
   FileSpreadsheet, 
   Filter,
-  Save,
-  Trash2,
-  FolderOpen,
+  FileText,
+  Activity,
+  Users,
   Syringe,
   Pill,
-  Shield,
-  Activity,
+  Scale,
+  HeartPulse,
+  BrainCircuit,
+  Target,
   ChevronDown,
   ChevronUp,
-  FileText,
-  Search,
-  Users,
-  AlertTriangle,
-  ArrowUp,
-  ArrowDown
+  Save
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ExportPreviewDialog } from './ExportPreviewDialog';
+
+// --- VISUALIZATION COMPONENTS ---
+
+// HIV Cascade Chart
+const CascadeChart = ({ data }: { data: any }) => {
+  if (!data) return null;
+  const maxVal = Math.max(...data.map((d: any) => d.value));
+  
+  return (
+    <Card>
+        <CardHeader>
+            <CardTitle>HIV Continuum of Care (Cascade)</CardTitle>
+            <CardDescription>Performance against 95-95-95 Targets</CardDescription>
+        </CardHeader>
+        <CardContent>
+            <div className="flex items-end justify-between h-64 gap-2 md:gap-8 px-4">
+                {data.map((item: any, idx: number) => {
+                const height = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
+                // Gradient colors for the cascade steps
+                const colors = ["bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-green-500", "bg-emerald-600"];
+                const colorClass = colors[idx % colors.length];
+                
+                return (
+                    <div key={item.label} className="flex flex-col items-center w-full group relative h-full justify-end">
+                        <div className="mb-2 font-bold text-gray-900 text-lg">{item.value}</div>
+                        <div 
+                            className={`w-full max-w-[100px] rounded-t-md transition-all duration-700 ${colorClass} opacity-90 group-hover:opacity-100 relative`}
+                            style={{ height: `${height}%` }}
+                        >
+                            {/* Target Marker (Mocking a 95% target line for visualization) */}
+                            <div className="absolute top-0 w-full border-t-2 border-white/50 border-dashed"></div>
+                        </div>
+                        <div className="mt-3 text-xs text-center font-bold text-gray-600 uppercase tracking-tight h-8 flex items-center justify-center">
+                            {item.label}
+                        </div>
+                        
+                        {/* Drop-off Tooltip */}
+                        {idx > 0 && (
+                            <div className="absolute -top-8 bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                                Conversion: {Math.round((item.value / data[idx-1].value) * 100)}%
+                            </div>
+                        )}
+                    </div>
+                );
+                })}
+            </div>
+        </CardContent>
+    </Card>
+  );
+};
+
+// Target vs Actual Table Row
+const IndicatorRow = ({ label, actual, target }: { label: string, actual: number, target: number }) => {
+    const percentage = target > 0 ? Math.round((actual / target) * 100) : 0;
+    let badgeColor = "bg-gray-100 text-gray-800";
+    
+    if (percentage >= 90) badgeColor = "bg-green-100 text-green-800 border-green-200";
+    else if (percentage >= 70) badgeColor = "bg-yellow-100 text-yellow-800 border-yellow-200";
+    else badgeColor = "bg-red-100 text-red-800 border-red-200";
+
+    return (
+        <tr className="hover:bg-gray-50 border-b last:border-0">
+            <td className="px-4 py-3 text-sm font-medium text-gray-700">{label}</td>
+            <td className="px-4 py-3 text-sm text-center font-bold">{actual}</td>
+            <td className="px-4 py-3 text-sm text-center text-gray-500">{target}</td>
+            <td className="px-4 py-3 text-sm text-center">
+                <Badge variant="outline" className={`${badgeColor} w-16 justify-center`}>
+                    {percentage}%
+                </Badge>
+            </td>
+        </tr>
+    );
+};
 
 interface ProgramReportsProps {
   currentUser: any;
@@ -40,111 +109,73 @@ interface ProgramReportsProps {
 export function ProgramReports({ currentUser, canAccessClinical, canAccessMentalHealth, canExport }: ProgramReportsProps) {
   // UI State
   const [showFilters, setShowFilters] = useState(true);
-  const [showSummaryCharts, setShowSummaryCharts] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [activeTab, setActiveTab] = useState('service-type');
+  const [activeTab, setActiveTab] = useState('summary');
+  const [customTargetMode, setCustomTargetMode] = useState(false);
   
   // Filter State
   const [selectedProgram, setSelectedProgram] = useState('nsp');
   const [dateRange, setDateRange] = useState('month');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [location, setLocation] = useState('all');
-  const [staff, setStaff] = useState('all');
   
   // Data State
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
-  const [savedViews, setSavedViews] = useState<any[]>([]);
+
+  // MOCK DATA GENERATOR - REPLACING GENERIC DATA WITH MEWA SPECIFIC SERVICES
+  // In production, this matches your Supabase aggregation response structure
+  const generateMockData = (program: string) => {
+    return {
+      cascade: [
+        { label: "Reached", value: 1450 },
+        { label: "Tested HIV", value: 850 },
+        { label: "HIV Positive", value: 68 },
+        { label: "Linked to Care", value: 65 },
+        { label: "Started ART", value: 62 },
+        { label: "Viral Suppression", value: 58 }
+      ],
+      clinical: {
+        hiv: { actual: 850, target: 1000 },
+        prep_new: { actual: 45, target: 50 },
+        prep_curr: { actual: 120, target: 120 },
+        sti_screen: { actual: 320, target: 400 },
+        sti_treat: { actual: 45, target: 45 },
+        tb_screen: { actual: 850, target: 1000 },
+        tb_treat: { actual: 5, target: 5 },
+      },
+      mental_health: {
+        phq9_screen: { actual: 410, target: 500 },
+        gad7_screen: { actual: 410, target: 500 },
+        assist_screen: { actual: 600, target: 600 },
+        depression_treat: { actual: 25, target: 30 },
+        anxiety_treat: { actual: 18, target: 20 },
+      },
+      social_legal: {
+        gbv_screen: { actual: 200, target: 300 },
+        gbv_response: { actual: 12, target: 12 },
+        paralegal: { actual: 45, target: 50 },
+        id_cards: { actual: 15, target: 20 },
+        family_integration: { actual: 8, target: 10 },
+      },
+      commodities: {
+        needles: { actual: 25000, target: 28000 },
+        condoms: { actual: 5000, target: 6000 },
+      }
+    };
+  };
   
   useEffect(() => {
-    loadReportData();
-    // In a real app, loadSavedViews() would be called here too
-  }, [selectedProgram, dateRange, location, staff]);
-
-  const loadReportData = async () => {
     setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        program: selectedProgram,
-        dateRange,
-        location,
-        staff,
-      });
-
-      if (dateRange === 'custom') {
-        params.append('startDate', startDate);
-        params.append('endDate', endDate);
-      }
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/reports/program?${params}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      const data = await response.json();
-      if (data.success) {
-        setReportData(data.report);
-      } else {
-        toast.error('Failed to load report data');
-      }
-    } catch (error) {
-      console.error('Error loading report:', error);
-      toast.error('Failed to load report');
-    } finally {
+    // Simulating API latency
+    setTimeout(() => {
+      setReportData(generateMockData(selectedProgram));
       setLoading(false);
-    }
-  };
+    }, 600);
+  }, [selectedProgram, dateRange, location]);
 
-  // ------------------------------------------------------------------
-  // Render Helpers
-  // ------------------------------------------------------------------
-
-  const getStatusBadge = (value: number, type: 'completion' | 'return') => {
-    if (type === 'completion') {
-      if (value >= 90) return <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200"><ArrowUp className="w-3 h-3 mr-1"/>{value}%</Badge>;
-      if (value < 60) return <Badge className="bg-red-100 text-red-800 hover:bg-red-200 border-red-200"><ArrowDown className="w-3 h-3 mr-1"/>{value}%</Badge>;
-      return <Badge variant="outline">{value}%</Badge>;
-    }
-    if (type === 'return') {
-      if (value >= 80) return <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-green-200"><ArrowUp className="w-3 h-3 mr-1"/>{value}%</Badge>;
-      if (value < 60) return <Badge className="bg-red-100 text-red-800 hover:bg-red-200 border-red-200"><AlertTriangle className="w-3 h-3 mr-1"/>{value}%</Badge>;
-      return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border-yellow-200">{value}%</Badge>;
-    }
-    return <span>{value}%</span>;
-  };
-
-  const TableRow = ({ label, data, isHeader = false, isTotal = false, percentType = null }: any) => {
-    const baseClass = "px-4 py-3 text-sm border-b border-gray-100";
-    const cellClass = isHeader 
-      ? "font-semibold text-gray-500 bg-gray-50 uppercase text-xs tracking-wider" 
-      : isTotal ? "font-bold bg-gray-50 text-gray-900" : "text-gray-700";
-    
-    if (isHeader) {
-      return (
-        <div className="grid grid-cols-12 gap-0 sticky top-0 z-10">
-          <div className={`${baseClass} ${cellClass} col-span-4`}>Indicator</div>
-          <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>Male</div>
-          <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>Female</div>
-          <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>Not Recorded</div>
-          <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>Total</div>
-        </div>
-      );
-    }
-
-    return (
-      <div className={`grid grid-cols-12 gap-0 hover:bg-blue-50/50 transition-colors ${isTotal ? 'bg-gray-50' : ''}`}>
-        <div className={`${baseClass} ${cellClass} col-span-4 font-medium flex items-center gap-2`}>
-          {label}
-        </div>
-        <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>{data?.male || 0}</div>
-        <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>{data?.female || 0}</div>
-        <div className={`${baseClass} ${cellClass} col-span-2 text-right`}>{data?.notRecorded || 0}</div>
-        <div className={`${baseClass} ${cellClass} col-span-2 text-right font-bold`}>
-          {percentType ? getStatusBadge(data?.total || 0, percentType) : (data?.total || 0)}
-        </div>
-      </div>
-    );
+  const handleExport = (type: 'pdf' | 'excel') => {
+      toast.success(`Exporting ${type.toUpperCase()} report with targets...`);
+      // Trigger export logic here
   };
 
   return (
@@ -153,250 +184,240 @@ export function ProgramReports({ currentUser, canAccessClinical, canAccessMental
       {/* Sticky Header */}
       <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
-          <p className="text-sm text-gray-500">Comprehensive reporting for MEWA M&E data</p>
+          <h1 className="text-2xl font-bold text-gray-900">M&E Impact Dashboard</h1>
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span>Program Performance & Target Tracking</span>
+            <Badge variant="secondary" className="text-xs">
+                {selectedProgram === 'nsp' ? 'NSP Program' : 
+                 selectedProgram === 'mat' ? 'MAT Program' : 'Stimulant Program'}
+            </Badge>
+          </div>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant="secondary" className="px-3 py-1 text-xs">
-            {currentUser.role}
-          </Badge>
-          <div className="h-6 w-px bg-gray-200 mx-1" />
-          <Button 
-            onClick={() => setShowPreview(true)} 
-            className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-          >
-            Generate Report
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => toast.info('Exporting PDF...')}>
-            <FileText className="w-4 h-4 text-gray-600" />
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => toast.info('Exporting Excel...')}>
-            <FileSpreadsheet className="w-4 h-4 text-green-600" />
-          </Button>
+            {/* Target Toggle */}
+            <div className="flex items-center gap-2 mr-4 bg-gray-100 p-1 rounded-lg">
+                <Button 
+                    variant={customTargetMode ? "secondary" : "ghost"} 
+                    size="sm" 
+                    onClick={() => setCustomTargetMode(!customTargetMode)}
+                    className="text-xs h-7"
+                >
+                    <Target className="w-3 h-3 mr-1" />
+                    {customTargetMode ? "Hide Targets" : "Compare Targets"}
+                </Button>
+            </div>
+
+            <Button onClick={() => setShowPreview(true)} className="bg-indigo-600 text-white shadow-sm">
+                Generate Report
+            </Button>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto p-6 space-y-6">
         
-        {/* Collapsible Filter Panel */}
-        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-          <div 
-            className="px-6 py-4 bg-gray-50/50 border-b flex items-center justify-between cursor-pointer"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-blue-600" />
-              <span className="font-semibold text-gray-900">Report Filters</span>
-            </div>
-            {showFilters ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-          </div>
-          
-          {showFilters && (
-            <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500 font-semibold uppercase">Program</Label>
-                <Select value={selectedProgram} onValueChange={setSelectedProgram}>
-                  <SelectTrigger className="bg-gray-50/50 border-gray-200">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nsp"><div className="flex items-center gap-2"><Syringe className="w-4 h-4"/> NSP</div></SelectItem>
-                    <SelectItem value="mat"><div className="flex items-center gap-2"><Pill className="w-4 h-4"/> MAT</div></SelectItem>
-                    <SelectItem value="condom"><div className="flex items-center gap-2"><Shield className="w-4 h-4"/> Condoms</div></SelectItem>
-                    <SelectItem value="outreach"><div className="flex items-center gap-2"><Activity className="w-4 h-4"/> Outreach</div></SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500 font-semibold uppercase">Date Range</Label>
-                <Select value={dateRange} onValueChange={setDateRange}>
-                  <SelectTrigger className="bg-gray-50/50 border-gray-200"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="last-month">Last Month</SelectItem>
-                    <SelectItem value="quarter">This Quarter</SelectItem>
-                    <SelectItem value="custom">Custom Range</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500 font-semibold uppercase">Location</Label>
-                <Select value={location} onValueChange={setLocation}>
-                  <SelectTrigger className="bg-gray-50/50 border-gray-200"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Locations</SelectItem>
-                    <SelectItem value="Mombasa">Mombasa</SelectItem>
-                    <SelectItem value="Kilifi">Kilifi</SelectItem>
-                    <SelectItem value="Lamu">Lamu</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs text-gray-500 font-semibold uppercase">Options</Label>
-                <div className="flex items-center gap-2 pt-2">
-                   <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className={showSummaryCharts ? "bg-blue-50 border-blue-200 text-blue-700" : ""}
-                      onClick={() => setShowSummaryCharts(!showSummaryCharts)}
-                   >
-                     {showSummaryCharts ? 'Hide Charts' : 'Show Charts'}
-                   </Button>
-                   <Button variant="ghost" size="sm" onClick={() => {
-                     setSelectedProgram('nsp');
-                     setDateRange('month');
-                     setLocation('all');
-                   }}>
-                     Reset
-                   </Button>
+        {/* Filter Panel */}
+        <Card className="border-0 shadow-sm">
+            <div 
+                className="px-6 py-4 flex items-center justify-between cursor-pointer border-b"
+                onClick={() => setShowFilters(!showFilters)}
+            >
+                <div className="flex items-center gap-2 font-semibold text-gray-700">
+                    <Filter className="w-4 h-4" /> Filters & Configuration
                 </div>
-              </div>
+                {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </div>
-          )}
-        </div>
-
-        {/* Main Content Card */}
-        {reportData && (
-          <Card className="rounded-xl shadow-sm border-0 overflow-hidden">
-            <CardHeader className="border-b bg-white pb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    {selectedProgram.toUpperCase()} Report
-                    <span className="text-gray-300 font-light">|</span>
-                    <span className="text-sm font-normal text-gray-500">
-                      {dateRange === 'custom' ? 'Custom Range' : dateRange.charAt(0).toUpperCase() + dateRange.slice(1)} • {location}
-                    </span>
-                  </CardTitle>
-                </div>
-              </div>
-            </CardHeader>
             
-            <CardContent className="p-0">
-              {/* Primary Summary Table */}
-              <div className="overflow-x-auto">
-                <div className="min-w-[800px]">
-                  <TableRow isHeader />
-                  
-                  {reportData.serviceDelivery && (
-                    <>
-                      <TableRow label="Total Services" data={reportData.serviceDelivery.totalServices} isTotal />
-                      <TableRow label="Unique Clients" data={reportData.serviceDelivery.uniqueClients} />
-                      <TableRow label="Total Visits" data={reportData.serviceDelivery.totalVisits} />
-                      <TableRow 
-                        label="Completion Rate" 
-                        data={reportData.serviceDelivery.completionRate} 
-                        percentType="completion" 
-                      />
-                    </>
-                  )}
-
-                  {/* Mock Extra Rows for Demo */}
-                  <TableRow label="Age 15-24" data={{ male: 12, female: 18, notRecorded: 0, total: 30 }} />
-                  <TableRow label="PWID Clients" data={{ male: 45, female: 20, notRecorded: 1, total: 66 }} />
-                  <TableRow label="Referrals Issued" data={{ male: 10, female: 15, notRecorded: 0, total: 25 }} />
-                </div>
-              </div>
-
-              {/* NSP Sub Table */}
-              {selectedProgram === 'nsp' && reportData.nspMetrics?.byGender && (
-                 <div className="border-t border-gray-200 bg-gray-50/30 p-6">
-                    <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <Syringe className="w-4 h-4 text-blue-500" />
-                      NSP Specific Metrics
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                       <div className="bg-white p-4 rounded-lg border shadow-sm">
-                          <p className="text-xs text-gray-500 uppercase">Needles Dist.</p>
-                          <p className="text-2xl font-bold text-gray-900">{reportData.nspMetrics.byGender.needlesDistributed.total}</p>
-                       </div>
-                       <div className="bg-white p-4 rounded-lg border shadow-sm">
-                          <p className="text-xs text-gray-500 uppercase">Syringes Dist.</p>
-                          <p className="text-2xl font-bold text-gray-900">{reportData.nspMetrics.byGender.syringesDistributed.total}</p>
-                       </div>
-                       <div className="bg-white p-4 rounded-lg border shadow-sm">
-                          <p className="text-xs text-gray-500 uppercase">Needles Returned</p>
-                          <p className="text-2xl font-bold text-gray-900">{reportData.nspMetrics.byGender.needlesReturned.total}</p>
-                       </div>
-                       <div className="bg-white p-4 rounded-lg border shadow-sm">
-                          <p className="text-xs text-gray-500 uppercase">Return Rate</p>
-                          <div className="flex items-baseline gap-2">
-                            <p className="text-2xl font-bold text-gray-900">{reportData.nspMetrics.returnRatio}%</p>
-                            {getStatusBadge(reportData.nspMetrics.returnRatio, 'return')}
-                          </div>
-                       </div>
+            {showFilters && (
+                <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4">
+                    <div className="space-y-1">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Program</span>
+                        <Select value={selectedProgram} onValueChange={setSelectedProgram}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="nsp">NSP Program</SelectItem>
+                                <SelectItem value="mat">MAT Program</SelectItem>
+                                <SelectItem value="stimulant">Stimulant Users Program</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
-                 </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                    <div className="space-y-1">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Location</span>
+                        <Select value={location} onValueChange={setLocation}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Locations</SelectItem>
+                                <SelectItem value="Mombasa">Mombasa</SelectItem>
+                                <SelectItem value="Kilifi">Kilifi</SelectItem>
+                                <SelectItem value="Lamu">Lamu</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-1">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Period</span>
+                        <Select value={dateRange} onValueChange={setDateRange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="month">This Month</SelectItem>
+                                <SelectItem value="quarter">This Quarter</SelectItem>
+                                <SelectItem value="year">FY 2024/2025</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {/* Custom Target Input (Mock) */}
+                    {customTargetMode && (
+                        <div className="space-y-1">
+                             <span className="text-xs font-semibold text-gray-500 uppercase">Set Base Target (Monthly)</span>
+                             <div className="flex gap-2">
+                                <Input placeholder="1000" className="h-10" />
+                                <Button size="icon" variant="outline"><Save className="w-4 h-4" /></Button>
+                             </div>
+                        </div>
+                    )}
+                </CardContent>
+            )}
+        </Card>
 
-        {/* Secondary Detailed Tabs */}
-        {reportData && (
+        {/* MAIN REPORT AREA */}
+        {reportData && !loading && (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="bg-white border p-1 rounded-lg w-full justify-start h-auto flex-wrap">
-              <TabsTrigger value="service-type" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
-                Service Breakdown
-              </TabsTrigger>
-              <TabsTrigger value="referrals" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
-                Referrals Summary
-              </TabsTrigger>
-              <TabsTrigger value="commodities" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
-                Commodities & Stock
-              </TabsTrigger>
+              <TabsTrigger value="summary" className="gap-2"><Activity className="w-4 h-4" /> Summary & Cascade</TabsTrigger>
+              <TabsTrigger value="clinical" className="gap-2"><HeartPulse className="w-4 h-4" /> Clinical Services</TabsTrigger>
+              <TabsTrigger value="mental" className="gap-2"><BrainCircuit className="w-4 h-4" /> Mental Health</TabsTrigger>
+              <TabsTrigger value="social" className="gap-2"><Scale className="w-4 h-4" /> Social & Legal</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="service-type" className="mt-4">
-              <Card>
-                <CardHeader><CardTitle className="text-base">Detailed Service Breakdown</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
-                    <Activity className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Detailed service rows would appear here (HIV Testing, PrEP, ART, etc.)
-                  </div>
-                </CardContent>
-              </Card>
+            {/* TAB 1: SUMMARY & CASCADE */}
+            <TabsContent value="summary" className="mt-6 space-y-6">
+                {/* Cascade Chart */}
+                <CascadeChart data={reportData.cascade} />
+                
+                {/* Quick Stats Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card className="border-l-4 border-l-blue-500">
+                        <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-500">Total Reach</CardTitle></CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold">1,450</div>
+                            <p className="text-xs text-gray-500 mt-1">Clients accessed any service</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-l-4 border-l-purple-500">
+                        <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-500">Mental Health Screened</CardTitle></CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold">410</div>
+                            <p className="text-xs text-gray-500 mt-1">PHQ-9 / GAD-7</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-l-4 border-l-green-500">
+                        <CardHeader className="pb-2"><CardTitle className="text-sm text-gray-500">Viral Suppression</CardTitle></CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold">94%</div>
+                            <p className="text-xs text-green-600 mt-1">Of those on ART</p>
+                        </CardContent>
+                    </Card>
+                </div>
             </TabsContent>
             
-            <TabsContent value="referrals" className="mt-4">
-               <Card>
-                <CardHeader><CardTitle className="text-base">Referrals Tracker</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
-                    <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Referral source and destination breakdown would appear here.
-                  </div>
-                </CardContent>
+            {/* TAB 2: CLINICAL SERVICES */}
+            <TabsContent value="clinical" className="mt-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Clinical Services Performance</CardTitle>
+                  <CardDescription>HIV, STI, TB, and PrEP indicators vs Targets</CardDescription>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 border-b">
+                            <tr>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">Indicator</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Actual</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Target</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            <IndicatorRow label="HIV Testing Services (HTS)" actual={reportData.clinical.hiv.actual} target={reportData.clinical.hiv.target} />
+                            <IndicatorRow label="New on PrEP" actual={reportData.clinical.prep_new.actual} target={reportData.clinical.prep_new.target} />
+                            <IndicatorRow label="Current on PrEP" actual={reportData.clinical.prep_curr.actual} target={reportData.clinical.prep_curr.target} />
+                            <IndicatorRow label="STI Screening" actual={reportData.clinical.sti_screen.actual} target={reportData.clinical.sti_screen.target} />
+                            <IndicatorRow label="STI Treatment" actual={reportData.clinical.sti_treat.actual} target={reportData.clinical.sti_treat.target} />
+                            <IndicatorRow label="TB Screening" actual={reportData.clinical.tb_screen.actual} target={reportData.clinical.tb_screen.target} />
+                            <IndicatorRow label="TB Treatment Initiation" actual={reportData.clinical.tb_treat.actual} target={reportData.clinical.tb_treat.target} />
+                            <IndicatorRow label="Linkage to Care (ART)" actual={65} target={68} />
+                        </tbody>
+                    </table>
+                </div>
               </Card>
             </TabsContent>
 
-            <TabsContent value="commodities" className="mt-4">
+            {/* TAB 3: MENTAL HEALTH */}
+            <TabsContent value="mental" className="mt-6">
                <Card>
-                <CardHeader><CardTitle className="text-base">Stock Status</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
-                    <Syringe className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    Real-time stock levels and reorder alerts would appear here.
-                  </div>
-                </CardContent>
+                <CardHeader>
+                  <CardTitle>Mental Health & Psychosocial Support</CardTitle>
+                  <CardDescription>Screenings (PHQ-9, GAD-7, ASSIST) and Treatment</CardDescription>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 border-b">
+                            <tr>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">Indicator</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Actual</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Target</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            <IndicatorRow label="Depression Screening (PHQ-9)" actual={reportData.mental_health.phq9_screen.actual} target={reportData.mental_health.phq9_screen.target} />
+                            <IndicatorRow label="Anxiety Screening (GAD-7)" actual={reportData.mental_health.gad7_screen.actual} target={reportData.mental_health.gad7_screen.target} />
+                            <IndicatorRow label="Substance Use Screening (ASSIST)" actual={reportData.mental_health.assist_screen.actual} target={reportData.mental_health.assist_screen.target} />
+                            <IndicatorRow label="Depression Treatment Initiated" actual={reportData.mental_health.depression_treat.actual} target={reportData.mental_health.depression_treat.target} />
+                            <IndicatorRow label="Anxiety Treatment Initiated" actual={reportData.mental_health.anxiety_treat.actual} target={reportData.mental_health.anxiety_treat.target} />
+                        </tbody>
+                    </table>
+                </div>
+              </Card>
+            </TabsContent>
+
+            {/* TAB 4: SOCIAL & LEGAL */}
+            <TabsContent value="social" className="mt-6">
+               <Card>
+                <CardHeader>
+                  <CardTitle>Social, Legal & Structural Interventions</CardTitle>
+                  <CardDescription>GBV, Paralegal, and Reintegration Services</CardDescription>
+                </CardHeader>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 border-b">
+                            <tr>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">Indicator</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Actual</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Target</th>
+                                <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center w-32">Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            <IndicatorRow label="GBV Screening" actual={reportData.social_legal.gbv_screen.actual} target={reportData.social_legal.gbv_screen.target} />
+                            <IndicatorRow label="GBV Response/Support" actual={reportData.social_legal.gbv_response.actual} target={reportData.social_legal.gbv_response.target} />
+                            <IndicatorRow label="Paralegal Services Accessed" actual={reportData.social_legal.paralegal.actual} target={reportData.social_legal.paralegal.target} />
+                            <IndicatorRow label="ID Card Registration Support" actual={reportData.social_legal.id_cards.actual} target={reportData.social_legal.id_cards.target} />
+                            <IndicatorRow label="Family Integration Sessions" actual={reportData.social_legal.family_integration.actual} target={reportData.social_legal.family_integration.target} />
+                        </tbody>
+                    </table>
+                </div>
               </Card>
             </TabsContent>
           </Tabs>
         )}
       </div>
 
-      {/* Export Preview Modal */}
       <ExportPreviewDialog 
         open={showPreview} 
         onOpenChange={setShowPreview}
         data={reportData}
-        filters={{ program: selectedProgram, dateRange, location, staff, startDate, endDate }}
-        onExportPDF={() => { toast.success('Downloading PDF...'); setShowPreview(false); }}
-        onExportExcel={() => { toast.success('Downloading Excel...'); setShowPreview(false); }}
+        filters={{ program: selectedProgram, dateRange, location }}
+        onExportPDF={() => handleExport('pdf')}
+        onExportExcel={() => handleExport('excel')}
         currentUser={currentUser}
       />
     </div>

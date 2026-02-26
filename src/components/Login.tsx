@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Users, RefreshCw } from 'lucide-react';
+import { Users, RefreshCw, KeyRound } from 'lucide-react';
 import { getRolePermissions } from '../utils/permissions';
 import { initializeDemoData } from './InitializeData';
 
@@ -17,6 +17,9 @@ interface LoginProps {
 export function Login({ onLogin }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [view, setView] = useState<'login' | 'change-password'>('login');
+  const [tempUser, setTempUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,6 +44,15 @@ export function Login({ onLogin }: LoginProps) {
       const data = await response.json();
 
       if (data.success) {
+        // Check if password reset is required
+        if (data.user.passwordResetRequired) {
+          setTempUser(data.user);
+          setView('change-password');
+          toast.info('Please set a new password to continue.');
+          setLoading(false);
+          return;
+        }
+
         // Compute permissions from role
         const rolePermissions = getRolePermissions(data.user.role);
         const permissionOverrides = Array.isArray(data.user.permissionOverrides) 
@@ -63,6 +75,63 @@ export function Login({ onLogin }: LoginProps) {
       }
     } catch (err) {
       console.error('Login error:', err);
+      setError('Network error. Please try again.');
+    } finally {
+      if (view === 'login') setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tempUser) return;
+    
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users/${tempUser.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ 
+            updates: { 
+              password: newPassword, 
+              passwordResetRequired: false 
+            },
+            adminUserId: tempUser.id 
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Password updated successfully!');
+        
+        // Complete the login process with the new data
+        const rolePermissions = getRolePermissions(tempUser.role);
+        const permissionOverrides = Array.isArray(tempUser.permissionOverrides) 
+          ? tempUser.permissionOverrides 
+          : [];
+        
+        const allPermissions = [...new Set([...rolePermissions, ...permissionOverrides])];
+        
+        const userWithPermissions = {
+          ...tempUser,
+          permissions: allPermissions,
+          passwordResetRequired: false
+        };
+        
+        onLogin(userWithPermissions);
+      } else {
+        setError(data.error || 'Failed to update password');
+      }
+    } catch (err) {
+      console.error('Password update error:', err);
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -124,97 +193,128 @@ export function Login({ onLogin }: LoginProps) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Sign In</CardTitle>
-            <CardDescription>Enter your credentials to access the system</CardDescription>
+            <CardTitle>{view === 'login' ? 'Sign In' : 'Change Password'}</CardTitle>
+            <CardDescription>
+              {view === 'login' 
+                ? 'Enter your credentials to access the system' 
+                : 'A password change is required for your account'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form id="login-form" onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="email@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
+            {view === 'login' ? (
+              <>
+                <form id="login-form" onSubmit={handleLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="email@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
 
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign In'}
-              </Button>
-            </form>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? 'Signing in...' : 'Sign In'}
+                  </Button>
+                </form>
 
-            <div className="mt-6 pt-6 border-t">
-              <p className="text-sm text-gray-600 mb-3">Demo Accounts:</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDemoLogin('Admin')}
-                >
-                  Admin
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDemoLogin('M&E Officer')}
-                >
-                  M&E Officer
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDemoLogin('Data Entry')}
-                >
-                  Data Entry
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDemoLogin('Viewer')}
-                >
-                  Viewer
-                </Button>
-              </div>
-            </div>
+                <div className="mt-6 pt-6 border-t">
+                  <p className="text-sm text-gray-600 mb-3">Demo Accounts:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('Admin')}>Admin</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('M&E Officer')}>M&E Officer</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('Data Entry')}>Data Entry</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDemoLogin('Viewer')}>Viewer</Button>
+                  </div>
+                </div>
 
-            <div className="mt-4 pt-4 border-t flex justify-center">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-xs text-gray-500 flex items-center gap-1 hover:text-indigo-600"
-                onClick={handleInitializeData}
-              >
-                <RefreshCw className="w-3 h-3" />
-                Reset / Initialize Demo Data
-              </Button>
-            </div>
+                <div className="mt-4 pt-4 border-t flex justify-center">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-xs text-gray-500 flex items-center gap-1 hover:text-indigo-600"
+                    onClick={handleInitializeData}
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Reset / Initialize Demo Data
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New Password</Label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="new-password"
+                      type="password"
+                      className="pl-9"
+                      placeholder="Enter new password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      minLength={6}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">Must be different from your temporary password.</p>
+                </div>
+
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* CHANGED: Added flex-col to stack buttons vertically */}
+                <div className="flex flex-col gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    className="w-full" 
+                    onClick={() => {
+                      setView('login');
+                      setNewPassword('');
+                      setTempUser(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? 'Updating...' : 'Update Password'}
+                  </Button>
+                </div>
+              </form>
+            )}
           </CardContent>
         </Card>
 
-        <p className="text-xs text-center text-gray-500">
-          All data is synchronized in real-time across three locations
-        </p>
+        {view === 'login' && (
+          <p className="text-xs text-center text-gray-500">
+            All data is synchronized in real-time across three locations
+          </p>
+        )}
       </div>
     </div>
   );

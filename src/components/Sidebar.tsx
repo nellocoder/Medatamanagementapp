@@ -15,8 +15,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Scale,
+  HeartPulse,
 } from 'lucide-react';
 import { cn } from './ui/utils';
+import { hasHIVAccess } from '../utils/permissions';
 import {
   Tooltip,
   TooltipContent,
@@ -37,6 +40,9 @@ export function Sidebar({ currentView, onViewChange, currentUser, onLogout }: Si
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'clients', label: 'Clients', icon: Users },
     { id: 'visits', label: 'Visits', icon: ClipboardList },
+    // Added Paralegal Module here
+    { id: 'paralegal', label: 'Paralegal', icon: Scale },
+    { id: 'hiv', label: 'HIV Management', icon: HeartPulse, hivOnly: true },
     { id: 'referrals', label: 'Referrals', icon: ExternalLink },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'users', label: 'Users', icon: UserCog, adminOnly: true },
@@ -45,6 +51,9 @@ export function Sidebar({ currentView, onViewChange, currentUser, onLogout }: Si
   ];
 
   const canAccess = (item: any) => {
+    if (item.hivOnly) {
+      return hasHIVAccess(currentUser);
+    }
     if (item.superAdminOnly) {
       return currentUser?.role === 'System Admin' || currentUser?.role === 'Admin';
     }
@@ -145,7 +154,7 @@ export function Sidebar({ currentView, onViewChange, currentUser, onLogout }: Si
         </div>
 
         {isCollapsed ? (
-             <Tooltip delayDuration={0}>
+              <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
@@ -157,7 +166,7 @@ export function Sidebar({ currentView, onViewChange, currentUser, onLogout }: Si
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="text-red-600 font-medium">Logout</TooltipContent>
-             </Tooltip>
+              </Tooltip>
         ) : (
             <Button
               variant="outline"

@@ -64,6 +64,14 @@ export const PERMISSIONS = {
   SYSTEM_AUDIT: 'system.audit',
   SYSTEM_SYNC: 'system.sync',
   SYSTEM_BACKUP: 'system.backup',
+  
+  // HIV Module
+  HIV_VIEW: 'hiv.view',
+  HIV_CREATE: 'hiv.create',
+  HIV_EDIT: 'hiv.edit',
+  HIV_DELETE: 'hiv.delete',
+  HIV_VIEW_SENSITIVE: 'hiv.view_sensitive',
+  HIV_EXPORT: 'hiv.export',
 };
 
 export const ROLE_DEFINITIONS = {
@@ -73,6 +81,7 @@ export const ROLE_DEFINITIONS = {
     permissions: Object.values(PERMISSIONS),
     color: '#ef4444',
     icon: 'Shield',
+    hiv_module_access: true,
   },
 
   'Admin': {
@@ -81,6 +90,7 @@ export const ROLE_DEFINITIONS = {
     permissions: Object.values(PERMISSIONS),
     color: '#ef4444',
     icon: 'Shield',
+    hiv_module_access: true,
   },
 
   'Viewer': {
@@ -99,6 +109,7 @@ export const ROLE_DEFINITIONS = {
     ],
     color: '#94a3b8',
     icon: 'Eye',
+    hiv_module_access: false,
   },
   
   'Data Entry': {
@@ -126,6 +137,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#6366f1',
     icon: 'Database',
+    hiv_module_access: false,
   },
   
   'Clinician': {
@@ -142,6 +154,10 @@ export const ROLE_DEFINITIONS = {
       PERMISSIONS.FOLLOWUP_VIEW,
       PERMISSIONS.FOLLOWUP_MANAGE,
       PERMISSIONS.REPORT_VIEW,
+      PERMISSIONS.HIV_VIEW,
+      PERMISSIONS.HIV_CREATE,
+      PERMISSIONS.HIV_EDIT,
+      PERMISSIONS.HIV_VIEW_SENSITIVE,
     ],
     restrictions: {
       cannotDelete: true,
@@ -149,6 +165,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#3b82f6',
     icon: 'Stethoscope',
+    hiv_module_access: true,
   },
   
   'M&E Officer': {
@@ -165,6 +182,8 @@ export const ROLE_DEFINITIONS = {
       PERMISSIONS.ANALYTICS_VIEW,
       PERMISSIONS.FORM_VIEW,
       PERMISSIONS.SYSTEM_AUDIT,
+      PERMISSIONS.HIV_VIEW,
+      PERMISSIONS.HIV_EXPORT,
     ],
     restrictions: {
       cannotEditClinical: true,
@@ -172,6 +191,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#8b5cf6',
     icon: 'BarChart',
+    hiv_module_access: false, // Must be explicitly granted per user
   },
   
   'Program Manager': {
@@ -193,12 +213,17 @@ export const ROLE_DEFINITIONS = {
       PERMISSIONS.REPORT_CREATE,
       PERMISSIONS.ANALYTICS_VIEW,
       PERMISSIONS.CLINICAL_APPROVE,
+      PERMISSIONS.HIV_VIEW,
+      PERMISSIONS.HIV_CREATE,
+      PERMISSIONS.HIV_EDIT,
+      PERMISSIONS.HIV_EXPORT,
     ],
     restrictions: {
       cannotChangeSystemSettings: true,
     },
     color: '#10b981',
     icon: 'Briefcase',
+    hiv_module_access: true,
   },
   
   'Program Coordinator': {
@@ -222,6 +247,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#06b6d4',
     icon: 'Users',
+    hiv_module_access: false,
   },
   
   'Outreach Worker': {
@@ -243,6 +269,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#f59e0b',
     icon: 'MapPin',
+    hiv_module_access: false,
   },
   
   'HTS Counsellor': {
@@ -264,6 +291,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#ec4899',
     icon: 'TestTube',
+    hiv_module_access: false,
   },
   
   'Psychologist': {
@@ -286,6 +314,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#a855f7',
     icon: 'Brain',
+    hiv_module_access: false,
   },
   
   'Counsellor': {
@@ -305,6 +334,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#14b8a6',
     icon: 'MessageCircle',
+    hiv_module_access: false,
   },
   
   'Nurse': {
@@ -327,6 +357,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#0ea5e9',
     icon: 'Heart',
+    hiv_module_access: false,
   },
   
   'Paralegal': {
@@ -346,6 +377,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#f97316',
     icon: 'Scale',
+    hiv_module_access: false,
   },
   
   'Social Worker': {
@@ -367,6 +399,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#84cc16',
     icon: 'Home',
+    hiv_module_access: false,
   },
   
   'Data Officer': {
@@ -391,6 +424,7 @@ export const ROLE_DEFINITIONS = {
     },
     color: '#6366f1',
     icon: 'Database',
+    hiv_module_access: false,
   },
 };
 
@@ -520,4 +554,14 @@ export const getRolePermissions = (roleName: string): string[] => {
 export const getTemplatePermissions = (templateName: string): string[] => {
   const template = PERMISSION_TEMPLATES[templateName as keyof typeof PERMISSION_TEMPLATES];
   return template ? template.permissions : [];
+};
+
+// Helper: check if user has HIV module access
+export const hasHIVAccess = (user: any): boolean => {
+  // Check explicit user-level override first
+  if (user?.hiv_module_access === true) return true;
+  if (user?.hiv_module_access === false) return false;
+  // Fall back to role definition
+  const roleDef = ROLE_DEFINITIONS[user?.role as keyof typeof ROLE_DEFINITIONS];
+  return (roleDef as any)?.hiv_module_access === true;
 };

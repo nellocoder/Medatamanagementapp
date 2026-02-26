@@ -8,6 +8,9 @@ import { AdminPanel } from './components/AdminPanel';
 import { AuditLog } from './components/AuditLog';
 import { Reports } from './components/Reports';
 import { ReferralDashboard } from './components/ReferralDashboard';
+// 1. IMPORT THE NEW COMPONENT
+import { ParalegalManagement } from './components/ParalegalManagement';
+import { HIVManagement } from './components/HIVManagement';
 import { Sidebar } from './components/Sidebar';
 import { Toaster } from './components/ui/sonner';
 import { useInitializeData } from './components/InitializeData';
@@ -114,6 +117,15 @@ export default function App() {
             currentUser={currentUser}
             onNavigateToClient={handleNavigateToClient}
           />
+        )}
+        
+        {/* 2. RENDER THE PARALEGAL COMPONENT */}
+        {currentView === 'paralegal' && (
+          <ParalegalManagement currentUser={currentUser} />
+        )}
+        
+        {currentView === 'hiv' && (
+          <HIVManagement currentUser={currentUser} />
         )}
       </div>
       

@@ -7,6 +7,16 @@ import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Alert, AlertDescription } from './ui/alert';
 import { Checkbox } from './ui/checkbox';
@@ -39,6 +49,7 @@ import {
   Save
 } from 'lucide-react';
 import { ROLE_DEFINITIONS, PERMISSION_TEMPLATES, PERMISSIONS, LOCATIONS, PROGRAMS, getRolePermissions } from '../utils/permissions';
+import { hasHIVAccess } from '../utils/permissions';
 
 interface AdminPanelProps {
   currentUser: any;
@@ -53,6 +64,8 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
   const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
   const [isPermissionsDialogOpen, setIsPermissionsDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [customPermissions, setCustomPermissions] = useState<string[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>('');
 
@@ -211,8 +224,44 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
     }
   };
 
+  const confirmDelete = (user: any) => {
+    setUserToDelete(user);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users/${userToDelete.id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ adminUserId: currentUser.id, permanent: true }),
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('User deleted permanently!');
+        setIsDeleteConfirmOpen(false);
+        setUserToDelete(null);
+        loadData();
+      } else {
+        toast.error(data.error || 'Failed to delete user');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error('Network error. Please try again.');
+    }
+  };
+
   const handleResetPassword = async (userId: string) => {
-    const newPassword = 'TempPassword123!';
+    const newPassword = 'Pass123';
     try {
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users/${userId}`,
@@ -445,6 +494,7 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
                     <TableHead>Role</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>HIV Access</TableHead>
                     <TableHead>Last Login</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -452,7 +502,7 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
                 <TableBody>
                   {users.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-gray-500 py-8">
+                      <TableCell colSpan={8} className="text-center text-gray-500 py-8">
                         No users found
                       </TableCell>
                     </TableRow>
@@ -492,6 +542,39 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
                             </Badge>
                           )}
                         </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={hasHIVAccess(user)}
+                            onCheckedChange={async (checked) => {
+                              try {
+                                const response = await fetch(
+                                  `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/users/${user.id}`,
+                                  {
+                                    method: 'PUT',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${publicAnonKey}`,
+                                    },
+                                    body: JSON.stringify({
+                                      updates: { hiv_module_access: checked },
+                                      adminUserId: currentUser.id,
+                                    }),
+                                  }
+                                );
+                                const data = await response.json();
+                                if (data.success) {
+                                  toast.success(`HIV access ${checked ? 'granted' : 'revoked'} for ${user.name}`);
+                                  loadData();
+                                } else {
+                                  toast.error(data.error || 'Failed to update HIV access');
+                                }
+                              } catch (error) {
+                                console.error('Error toggling HIV access:', error);
+                                toast.error('Network error');
+                              }
+                            }}
+                          />
+                        </TableCell>
                         <TableCell className="text-sm text-gray-500">
                           {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                         </TableCell>
@@ -530,6 +613,15 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
                                 <Lock className="w-4 h-4" />
                               </Button>
                             )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => confirmDelete(user)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title="Delete User Permanently"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -811,6 +903,24 @@ export function AdminPanel({ currentUser }: AdminPanelProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the user account for{' '}
+              <span className="font-semibold text-gray-900">{userToDelete?.name}</span> ({userToDelete?.email}) and remove their access to the system.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setUserToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteUser} className="bg-red-600 hover:bg-red-700 text-white border-0">
+              Delete User
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

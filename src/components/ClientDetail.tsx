@@ -35,7 +35,12 @@ import {
   Download,
   History,
   X,
-  Upload
+  Upload,
+  HeartPulse,
+  Shield,
+  TrendingUp,
+  TrendingDown,
+  Stethoscope,
 } from 'lucide-react';
 import {
   Accordion,
@@ -44,6 +49,9 @@ import {
   AccordionTrigger,
 } from "./ui/accordion";
 import { hasPermission, PERMISSIONS } from '../utils/permissions';
+import { hasHIVAccess } from '../utils/permissions';
+import { ClientHIVTab } from './ClientHIVTab';
+import { Progress } from './ui/progress';
 
 interface ClientDetailProps {
   clientId: string;
@@ -447,6 +455,12 @@ export function ClientDetail({ clientId, onBack, currentUser }: ClientDetailProp
           </TabsTrigger>
           {canViewClinical && <TabsTrigger value="clinical">Clinical Results</TabsTrigger>}
           <TabsTrigger value="interventions">Interventions</TabsTrigger>
+          {hasHIVAccess(currentUser) && (
+            <TabsTrigger value="hiv" className="gap-1">
+              <HeartPulse className="w-3.5 h-3.5" />
+              HIV Information
+            </TabsTrigger>
+          )}
           <TabsTrigger value="timeline">History & Audit</TabsTrigger>
         </TabsList>
 
@@ -1115,6 +1129,13 @@ export function ClientDetail({ clientId, onBack, currentUser }: ClientDetailProp
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* HIV Information Tab */}
+        {hasHIVAccess(currentUser) && (
+          <TabsContent value="hiv" className="space-y-6">
+            <ClientHIVTab clientId={clientId} currentUser={currentUser} />
+          </TabsContent>
+        )}
 
         {/* Audit Log / History Tab */}
         <TabsContent value="timeline" className="space-y-6">
