@@ -110,8 +110,7 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-[250px]" /> : (
-              <div style={{ width: '100%', height: 250 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+              <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={trends.monthlyClients || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -120,7 +119,6 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
                     <Bar dataKey="value" name="Unique Clients" fill="#4f46e5" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
             )}
           </CardContent>
         </Card>
@@ -131,8 +129,7 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-[250px]" /> : (
-              <div style={{ width: '100%', height: 250 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+              <ResponsiveContainer width="100%" height={250}>
                   <LineChart data={trends.artRetention || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -141,7 +138,6 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
                     <Line type="monotone" dataKey="value" name="Active on ART" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} />
                   </LineChart>
                 </ResponsiveContainer>
-              </div>
             )}
           </CardContent>
         </Card>
@@ -152,8 +148,7 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-[250px]" /> : (
-              <div style={{ width: '100%', height: 250 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+              <ResponsiveContainer width="100%" height={250}>
                   <LineChart data={trends.vlSuppression || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -162,7 +157,6 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
                     <Line type="monotone" dataKey="rate" name="Suppression %" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 2 }} />
                   </LineChart>
                 </ResponsiveContainer>
-              </div>
             )}
           </CardContent>
         </Card>
@@ -173,8 +167,7 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-[250px]" /> : (
-              <div style={{ width: '100%', height: 250 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+              <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={trends.matActive || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -183,7 +176,6 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
                     <Bar dataKey="value" name="Active Clients" fill="#a855f7" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
             )}
           </CardContent>
         </Card>
@@ -194,8 +186,7 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-[250px]" /> : (
-              <div style={{ width: '100%', height: 250 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+              <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={trends.nspDistribution || []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} />
@@ -204,7 +195,6 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
                     <Bar dataKey="value" name="Syringes Distributed" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
             )}
           </CardContent>
         </Card>
@@ -217,8 +207,7 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
         </CardHeader>
         <CardContent>
           {loading ? <Skeleton className="h-[300px]" /> : (
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+            <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={serviceDistribution} layout="vertical" margin={{ left: 80 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} />
@@ -227,7 +216,6 @@ export function ReportingOverview({ currentUser }: ReportingOverviewProps) {
                   <Bar dataKey="contacts" name="Total Contacts" fill="#6366f1" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
           )}
         </CardContent>
       </Card>

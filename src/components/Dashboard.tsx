@@ -383,9 +383,8 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Clients by Location</CardTitle>
           </CardHeader>
           <CardContent>
-            <div style={{ width: '100%', height: 300 }}>
               {locationData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={locationData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="name" />
@@ -395,11 +394,10 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="h-[300px] flex items-center justify-center text-gray-400">
                   No location data available
                 </div>
               )}
-            </div>
           </CardContent>
         </Card>
 
@@ -409,9 +407,8 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
             <CardTitle>Age Demographics</CardTitle>
           </CardHeader>
           <CardContent>
-             <div style={{ width: '100%', height: 300 }}>
               {ageData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
                       data={ageData}
@@ -431,11 +428,10 @@ export function Dashboard({ currentUser, onNavigateToVisit, onNavigateToVisits }
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="h-[300px] flex items-center justify-center text-gray-400">
                   No age data available
                 </div>
               )}
-            </div>
           </CardContent>
         </Card>
       </div>

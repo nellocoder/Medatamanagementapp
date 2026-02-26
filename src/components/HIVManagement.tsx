@@ -248,8 +248,7 @@ export function HIVManagement({ currentUser }: HIVManagementProps) {
             </CardHeader>
             <CardContent>
               {vlTrendData.length > 0 ? (
-                <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                <ResponsiveContainer width="100%" height={260}>
                   <LineChart data={vlTrendData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
@@ -259,7 +258,6 @@ export function HIVManagement({ currentUser }: HIVManagementProps) {
                     <Line type="monotone" dataKey="suppressionRate" name="Suppression %" stroke="#4f46e5" strokeWidth={2} dot={{ r: 3 }} />
                   </LineChart>
                 </ResponsiveContainer>
-                </div>
               ) : (
                 <div className="h-[260px] flex items-center justify-center text-gray-400 text-sm">No viral load data yet</div>
               )}
@@ -273,8 +271,7 @@ export function HIVManagement({ currentUser }: HIVManagementProps) {
             </CardHeader>
             <CardContent>
               {artTrendData.length > 0 ? (
-                <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={artTrendData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="label" tick={{ fontSize: 11 }} />
@@ -283,7 +280,6 @@ export function HIVManagement({ currentUser }: HIVManagementProps) {
                     <Bar dataKey="initiated" name="Initiated" fill="#10b981" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-                </div>
               ) : (
                 <div className="h-[260px] flex items-center justify-center text-gray-400 text-sm">No ART data yet</div>
               )}
@@ -297,8 +293,7 @@ export function HIVManagement({ currentUser }: HIVManagementProps) {
             </CardHeader>
             <CardContent>
               {regimenData.length > 0 ? (
-                <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={1}>
+                <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie data={regimenData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
                       {regimenData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
@@ -306,7 +301,6 @@ export function HIVManagement({ currentUser }: HIVManagementProps) {
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
-                </div>
               ) : (
                 <div className="h-[260px] flex items-center justify-center text-gray-400 text-sm">No active regimen data</div>
               )}
