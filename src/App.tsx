@@ -11,7 +11,7 @@ import { ReferralDashboard } from './components/ReferralDashboard';
 // 1. IMPORT THE NEW COMPONENT
 import { ParalegalManagement } from './components/ParalegalManagement';
 import { HIVManagement } from './components/HIVManagement';
-import { Sidebar } from './components/Sidebar';
+import { TopNavbar } from './components/TopNavbar';
 import { Toaster } from './components/ui/sonner';
 import { useInitializeData } from './components/InitializeData';
 import { getRolePermissions } from './utils/permissions';
@@ -85,8 +85,8 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar 
+    <div className="flex flex-col h-screen bg-gray-50">
+      <TopNavbar 
         currentView={currentView}
         onViewChange={handleViewChange}
         currentUser={currentUser}
