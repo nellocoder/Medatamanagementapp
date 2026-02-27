@@ -15,6 +15,10 @@ import { TopNavbar } from './components/TopNavbar';
 import { Toaster } from './components/ui/sonner';
 import { useInitializeData } from './components/InitializeData';
 import { getRolePermissions } from './utils/permissions';
+import { toast } from 'sonner';
+
+// Auto-logout after 15 minutes of inactivity (in milliseconds)
+const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -74,6 +78,47 @@ export default function App() {
     setCurrentView('clients');
     // Future: Set selected client ID to open detail view automatically
   };
+
+  // Auto-logout on inactivity
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let inactivityTimer: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      // Clear existing timer
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+      }
+
+      // Set new timer
+      inactivityTimer = setTimeout(() => {
+        toast.info('You have been logged out due to inactivity.');
+        handleLogout();
+      }, INACTIVITY_TIMEOUT);
+    };
+
+    // Activity events to track
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+
+    // Add event listeners
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    // Initialize the timer
+    resetTimer();
+
+    // Cleanup
+    return () => {
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+      }
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [currentUser]);
 
   if (!currentUser) {
     return (
