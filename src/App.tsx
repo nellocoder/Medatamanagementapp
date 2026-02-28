@@ -15,7 +15,7 @@ import { TopNavbar } from './components/TopNavbar';
 import { Toaster } from './components/ui/sonner';
 import { useInitializeData } from './components/InitializeData';
 import { getRolePermissions } from './utils/permissions';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 
 // Auto-logout after 15 minutes of inactivity (in milliseconds)
 const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
@@ -24,6 +24,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+  
+  // ADDED: State to hold the ID of a client when navigating from another view
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  
   const initialized = useInitializeData();
 
   useEffect(() => {
@@ -72,11 +76,16 @@ export default function App() {
     if (view === 'visits') {
       setSelectedVisitId(null);
     }
+    // Clear selected client when navigating away or directly to the clients list
+    if (view === 'clients' && selectedClientId) {
+       setSelectedClientId(null);
+    }
   };
 
+  // UPDATED: Now stores the ID and switches views
   const handleNavigateToClient = (clientId: string) => {
-    setCurrentView('clients');
-    // Future: Set selected client ID to open detail view automatically
+    setSelectedClientId(clientId); // Store the ID to pass to ClientManagement
+    setCurrentView('clients');     // Switch the view
   };
 
   // Auto-logout on inactivity
@@ -146,7 +155,15 @@ export default function App() {
             onNavigateToVisits={handleNavigateToVisits}
           />
         )}
-        {currentView === 'clients' && <ClientManagement currentUser={currentUser} />}
+        
+        {/* UPDATED: Pass the selectedClientId to ClientManagement */}
+        {currentView === 'clients' && (
+          <ClientManagement 
+            currentUser={currentUser} 
+            initialClientId={selectedClientId} 
+          />
+        )}
+        
         {currentView === 'visits' && (
           <VisitManagement 
             currentUser={currentUser} 

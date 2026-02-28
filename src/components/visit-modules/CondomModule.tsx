@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
 import { Checkbox } from '../ui/checkbox';
 import { toast } from 'sonner@2.0.3';
@@ -190,6 +190,9 @@ export function CondomModule({ visit, client, currentUser, onUpdate }: CondomMod
             <DialogTitle>
               {editingRecord ? 'Edit' : 'Record'} Condom & Lubricant Distribution
             </DialogTitle>
+            <DialogDescription>
+              Record the distribution of condoms and lubricants to this client
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Condoms */}

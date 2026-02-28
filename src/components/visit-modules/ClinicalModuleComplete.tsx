@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
@@ -278,6 +278,9 @@ export function ClinicalModule({ visit, client, currentUser, canEdit, onUpdate }
             <DialogContent className="max-w-xl">
               <DialogHeader>
                 <DialogTitle>{editingRecord ? 'Edit HIV Test' : 'Record HIV Test'}</DialogTitle>
+                <DialogDescription>
+                  {editingRecord ? 'Update the details of the HIV test.' : 'Enter the details of the HIV test.'}
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleHIVTest} className="space-y-4">
                 <div>
@@ -351,6 +354,9 @@ export function ClinicalModule({ visit, client, currentUser, canEdit, onUpdate }
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>{editingRecord ? 'Edit Vital Signs' : 'Record Vital Signs'}</DialogTitle>
+                <DialogDescription>
+                  {editingRecord ? 'Update the vital signs.' : 'Enter the vital signs.'}
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleVitals} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -450,6 +456,9 @@ export function ClinicalModule({ visit, client, currentUser, canEdit, onUpdate }
             <DialogContent className="max-w-xl">
               <DialogHeader>
                 <DialogTitle>{editingRecord ? 'Edit STI Screening' : 'Record STI Screening'}</DialogTitle>
+                <DialogDescription>
+                  {editingRecord ? 'Update the details of the STI screening.' : 'Enter the details of the STI screening.'}
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSTIScreen} className="space-y-4">
                 <div>

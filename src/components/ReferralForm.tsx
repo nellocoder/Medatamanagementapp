@@ -15,12 +15,16 @@ interface ReferralFormProps {
   currentUser: any;
   onSuccess: () => void;
   onCancel: () => void;
+  initialData?: any; // Added to support editing
 }
 
-export function ReferralForm({ clients, currentUser, onSuccess, onCancel }: ReferralFormProps) {
+export function ReferralForm({ clients, currentUser, onSuccess, onCancel, initialData }: ReferralFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
-  const [formData, setFormData, clearFormData] = useFormPersistence('referral_form_data', {
+  
+  // Use persistent storage for new referrals, but local state for edits to avoid overwriting
+  const isEditing = !!initialData;
+  const [persistentData, setPersistentData, clearFormData] = useFormPersistence('referral_form_data', {
     clientId: '',
     source: 'Outreach',
     triggerReason: '',
@@ -30,6 +34,16 @@ export function ReferralForm({ clients, currentUser, onSuccess, onCancel }: Refe
     assignedTo: '',
     notes: ''
   });
+
+  // Local state for the form, initialized with initialData if editing
+  const [formData, setFormData] = useState(initialData || persistentData);
+
+  // Sync with persistent storage only if not editing
+  useEffect(() => {
+    if (!isEditing) {
+      setPersistentData(formData);
+    }
+  }, [formData, isEditing, setPersistentData]);
 
   // Fetch users on mount
   useEffect(() => {
@@ -61,7 +75,6 @@ export function ReferralForm({ clients, currentUser, onSuccess, onCancel }: Refe
       'Legal': ['Paralegal'],
     };
     const specificRoles = map[serviceType] || [];
-    // If no specific roles (e.g. 'Other'), include a broader set
     if (specificRoles.length === 0) {
         return [...alwaysInclude, 'Social Worker', 'Clinician', 'Nurse', 'Counsellor', 'Paralegal', 'Psychologist', 'Outreach Worker'];
     }
@@ -84,37 +97,49 @@ export function ReferralForm({ clients, currentUser, onSuccess, onCancel }: Refe
         return;
     }
 
+    const selectedClient = clients.find(c => c.id === formData.clientId);
     setIsSubmitting(true);
+
     try {
-        const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/referrals`,
-            {
-                method: 'POST',
+        // Determine URL and Method based on mode
+        const url = isEditing 
+          ? `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/referrals/${initialData.id}`
+          : `https://${projectId}.supabase.co/functions/v1/make-server-56fd5521/referrals`;
+        
+        const method = isEditing ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+                method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${publicAnonKey}`
                 },
                 body: JSON.stringify({
-                    referral: {
+                    // Backend expects 'updates' for PUT, 'record' for POST
+                    [isEditing ? 'updates' : 'record']: {
                         ...formData,
-                        clientName: clients.find(c => c.id === formData.clientId)?.firstName || 'Unknown', // Denormalize for convenience if needed by backend, though backend fetches it
+                        clientName: selectedClient ? `${selectedClient.firstName} ${selectedClient.lastName}` : (formData.clientName || 'Unknown'),
+                        clientPhone: selectedClient?.phone || formData.clientPhone || 'No Phone',
+                        clientLocation: selectedClient?.location || selectedClient?.county || formData.clientLocation || 'No Location',
+                        clientProgram: selectedClient?.program || formData.clientProgram || 'NSP'
                     },
-                    userId: currentUser.name
+                    userId: currentUser.name,
+                    userName: currentUser.name
                 })
             }
         );
         
         const data = await response.json();
         if (data.success) {
-            toast.success('Referral created successfully');
-            clearFormData();
+            toast.success(isEditing ? 'Referral updated successfully' : 'Referral created successfully');
+            if (!isEditing) clearFormData();
             onSuccess();
         } else {
-            toast.error(data.error || 'Failed to create referral');
+            toast.error(data.error || 'Failed to save referral');
         }
     } catch (error) {
-        console.error('Error creating referral:', error);
-        toast.error('Failed to create referral');
+        console.error('Error saving referral:', error);
+        toast.error('An error occurred while saving');
     } finally {
         setIsSubmitting(false);
     }
@@ -124,15 +149,15 @@ export function ReferralForm({ clients, currentUser, onSuccess, onCancel }: Refe
       <>
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Creating...' : 'Create Referral'}
+            {isSubmitting ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Referral' : 'Create Referral')}
         </Button>
       </>
   );
 
   return (
     <StandardForm
-        title="New Referral"
-        description="Create a new service referral for a client."
+        title={isEditing ? "Edit Referral" : "New Referral"}
+        description={isEditing ? "Modify existing referral details." : "Create a new service referral for a client."}
         actions={actions}
     >
         <FormSection 
@@ -148,6 +173,7 @@ export function ReferralForm({ clients, currentUser, onSuccess, onCancel }: Refe
                     <Select 
                         value={formData.clientId} 
                         onValueChange={(v) => setFormData({...formData, clientId: v})}
+                        disabled={isEditing} // Client usually shouldn't change for an existing referral
                     >
                         <SelectTrigger><SelectValue placeholder="Select Client" /></SelectTrigger>
                         <SelectContent>

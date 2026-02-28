@@ -172,17 +172,17 @@ export function MATModule({ visit, client, currentUser, canEdit, onUpdate }: MAT
   };
 
   const toggleSideEffect = (effect: string) => {
-    setSideEffects(prev =>
+    setSideEffects((prev) =>
       prev.includes(effect)
-        ? prev.filter(e => e !== effect)
+        ? prev.filter((e) => e !== effect)
         : [...prev, effect]
     );
   };
 
   const toggleWithdrawalSymptom = (symptom: string) => {
-    setWithdrawalSymptoms(prev =>
+    setWithdrawalSymptoms((prev) =>
       prev.includes(symptom)
-        ? prev.filter(s => s !== symptom)
+        ? prev.filter((s) => s !== symptom)
         : [...prev, symptom]
     );
   };

@@ -2,6 +2,12 @@ import { Hono } from 'npm:hono';
 import { cors } from 'npm:hono/cors';
 import * as kv from './kv_store.tsx';
 
+// Helper function to safely get error message
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
 const app = new Hono();
 
 // CORS for all routes
@@ -47,7 +53,7 @@ app.post('/clients', async (c) => {
     return c.json({ success: true, client: clientRecord });
   } catch (error) {
     console.error('Error creating client:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -64,8 +70,12 @@ app.get('/clients', async (c) => {
     // 2. Fetch all data (KV limitation)
     let clients = await kv.getByPrefix('client:');
 
-    // Sort by createdAt descending (newest first)
-    clients.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Sort by createdAt descending (newest first) - with safe date handling
+    clients.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
 
     // 3. Apply Filters on Server Side
     if (location && location !== 'all') {
@@ -103,7 +113,7 @@ app.get('/clients', async (c) => {
 
   } catch (error) {
     console.error('Error fetching clients:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -176,7 +186,7 @@ app.get('/clients/next-id', async (c) => {
     });
   } catch (error) {
     console.error('Error generating next client ID:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -273,7 +283,7 @@ app.post('/admin/migrate-ids', async (c) => {
 
   } catch (error) {
     console.error('Error migrating IDs:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -290,7 +300,7 @@ app.get('/clients/:id', async (c) => {
     return c.json({ success: true, client });
   } catch (error) {
     console.error('Error fetching client:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -343,7 +353,7 @@ app.put('/clients/:id', async (c) => {
     return c.json({ success: true, client: updatedClient });
   } catch (error) {
     console.error('Error updating client:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -382,7 +392,7 @@ app.post('/visits', async (c) => {
     return c.json({ success: true, visit: visitRecord });
   } catch (error) {
     console.error('Error creating visit:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -396,7 +406,7 @@ app.get('/visits/client/:clientId', async (c) => {
     return c.json({ success: true, visits: clientVisits });
   } catch (error) {
     console.error('Error fetching visits:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -409,9 +419,11 @@ app.get('/visits', async (c) => {
     
     // Sort Newest First (Safe handling of missing dates)
     visits.sort((a, b) => {
-       const dateA = a.visitDate || a.createdAt || 0;
-       const dateB = b.visitDate || b.createdAt || 0;
-       return new Date(dateB).getTime() - new Date(dateA).getTime();
+       const dateA = a.visitDate || a.createdAt;
+       const dateB = b.visitDate || b.createdAt;
+       const timeA = dateA ? new Date(dateA).getTime() : 0;
+       const timeB = dateB ? new Date(dateB).getTime() : 0;
+       return timeB - timeA;
     });
 
     // Slice to limit
@@ -420,7 +432,7 @@ app.get('/visits', async (c) => {
     return c.json({ success: true, visits: recentVisits });
   } catch (error) {
     console.error('Error fetching visits:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -457,6 +469,43 @@ app.put('/visits/:id', async (c) => {
     return c.json({ success: true, visit: updatedVisit });
   } catch (error) {
     console.error('Error updating visit:', error);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
+  }
+});
+
+// Delete a visit
+app.delete('/visits/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { userId, userName } = await c.req.json(); // Optional user info for audit
+
+    // Normalize ID: remove 'visit:' prefix if present
+    const actualId = id.startsWith('visit:') ? id : `visit:${id}`;
+    const visit = await kv.get(actualId);
+
+    if (!visit) {
+      return c.json({ success: false, error: 'Visit not found' }, 404);
+    }
+
+    // Delete the record
+    await kv.del(actualId);
+
+    // Log to audit
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    await kv.set(`audit:${auditId}`, {
+      id: auditId,
+      entityType: 'visit',
+      entityId: id,
+      action: 'delete',
+      userId: userId || 'system',
+      userName: userName || 'System',
+      timestamp: new Date().toISOString(),
+      details: { clientId: visit.clientId, visitDate: visit.visitDate }
+    });
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting visit:', error);
     return c.json({ success: false, error: error.message }, 500);
   }
 });
@@ -517,7 +566,7 @@ app.post('/mental-health', async (c) => {
     return c.json({ success: true, record: mentalHealthRecord, flags });
   } catch (error) {
     console.error('Error adding mental health record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -546,7 +595,7 @@ app.put('/mental-health/:recordId', async (c) => {
     return c.json({ success: true, record: updatedRecord });
   } catch (error) {
     console.error('Error updating mental health record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -559,7 +608,7 @@ app.get('/mental-health/:visitId', async (c) => {
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching mental health records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -572,7 +621,7 @@ app.get('/clinical/:visitId', async (c) => {
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching clinical records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -601,7 +650,7 @@ app.post('/clinical', async (c) => {
     return c.json({ success: true, record: clinicalRecord });
   } catch (error) {
     console.error('Error adding clinical record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -630,7 +679,7 @@ app.put('/clinical/:recordId', async (c) => {
     return c.json({ success: true, record: updatedRecord });
   } catch (error) {
     console.error('Error updating clinical record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -642,7 +691,7 @@ app.get('/psychosocial/:visitId', async (c) => {
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching psychosocial records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -671,7 +720,7 @@ app.post('/psychosocial', async (c) => {
     return c.json({ success: true, record: psychosocialRecord });
   } catch (error) {
     console.error('Error adding psychosocial record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -700,7 +749,7 @@ app.put('/psychosocial/:recordId', async (c) => {
     return c.json({ success: true, record: updatedRecord });
   } catch (error) {
     console.error('Error updating psychosocial record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -712,7 +761,7 @@ app.get('/nsp/:visitId', async (c) => {
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching NSP records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -741,7 +790,7 @@ app.post('/nsp', async (c) => {
     return c.json({ success: true, record: nspRecord });
   } catch (error) {
     console.error('Error adding NSP record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -770,7 +819,7 @@ app.put('/nsp/:recordId', async (c) => {
     return c.json({ success: true, record: updatedRecord });
   } catch (error) {
     console.error('Error updating NSP record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -782,7 +831,7 @@ app.get('/condom/:visitId', async (c) => {
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching condom records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -811,7 +860,7 @@ app.post('/condom', async (c) => {
     return c.json({ success: true, record: condomRecord });
   } catch (error) {
     console.error('Error adding condom record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -840,7 +889,7 @@ app.put('/condom/:recordId', async (c) => {
     return c.json({ success: true, record: updatedRecord });
   } catch (error) {
     console.error('Error updating condom record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -852,7 +901,7 @@ app.get('/mat/:visitId', async (c) => {
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching MAT records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -881,7 +930,7 @@ app.post('/mat', async (c) => {
     return c.json({ success: true, record: matRecord });
   } catch (error) {
     console.error('Error adding MAT record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -910,7 +959,7 @@ app.put('/mat/:recordId', async (c) => {
     return c.json({ success: true, record: updatedRecord });
   } catch (error) {
     console.error('Error updating MAT record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -951,7 +1000,7 @@ app.post('/users', async (c) => {
     return c.json({ success: true, user: userRecord });
   } catch (error) {
     console.error('Error creating user:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -962,7 +1011,7 @@ app.get('/users', async (c) => {
     return c.json({ success: true, users });
   } catch (error) {
     console.error('Error fetching users:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1003,7 +1052,7 @@ app.put('/users/:id', async (c) => {
     return c.json({ success: true, user: updatedUser });
   } catch (error) {
     console.error('Error updating user:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1047,7 +1096,7 @@ app.delete('/users/:id', async (c) => {
     return c.json({ success: true });
   } catch (error) {
     console.error('Error deleting user:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1091,7 +1140,7 @@ app.post('/auth/login', async (c) => {
     return c.json({ success: true, user: userWithoutPassword });
   } catch (error) {
     console.error('Error during login:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1143,7 +1192,7 @@ app.post('/roles', async (c) => {
     return c.json({ success: true, role: roleRecord });
   } catch (error) {
     console.error('Error creating role:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1184,7 +1233,7 @@ app.put('/roles/:id', async (c) => {
     return c.json({ success: true, role: updatedRole });
   } catch (error) {
     console.error('Error updating role:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1200,114 +1249,180 @@ app.get('/permission-templates', async (c) => {
 });
 
 // ==================== DASHBOARD METRICS ====================
-
 app.get('/metrics', async (c) => {
   try {
-    const clients = await kv.getByPrefix('client:');
-    const visits = await kv.getByPrefix('visit:');
-    const users = await kv.getByPrefix('user:');
-    const psychosocial = await kv.getByPrefix('psychosocial:');
+    // ── Read filter params ──────────────────────────────────────────────────
+    const locationFilter  = c.req.query('location')  || 'all';
+    const programFilter   = c.req.query('program')   || 'all';
+    const dateRangeFilter = c.req.query('dateRange') || '30';  // e.g. '30','90','month:2025-03','quarter:2025-Q1','year:2025'
+    const searchFilter    = (c.req.query('search')   || '').toLowerCase().trim();
+
+    // ── Resolve date range to a [from, to] window ───────────────────────────
+    let dateFrom: Date;
+    let dateTo: Date = new Date(); // default: now
+
+    if (dateRangeFilter.startsWith('month:')) {
+      // e.g. 'month:2025-03'
+      const [year, month] = dateRangeFilter.replace('month:', '').split('-').map(Number);
+      dateFrom = new Date(year, month - 1, 1);
+      dateTo   = new Date(year, month, 0, 23, 59, 59); // last day of month
+    } else if (dateRangeFilter.startsWith('quarter:')) {
+      // e.g. 'quarter:2025-Q1'
+      const [yearStr, qStr] = dateRangeFilter.replace('quarter:', '').split('-Q');
+      const year = parseInt(yearStr);
+      const quarter = parseInt(qStr); // 1-4
+      const startMonth = (quarter - 1) * 3; // 0, 3, 6, 9
+      dateFrom = new Date(year, startMonth, 1);
+      dateTo   = new Date(year, startMonth + 3, 0, 23, 59, 59); // last day of last month in quarter
+    } else if (dateRangeFilter.startsWith('year:')) {
+      // e.g. 'year:2025'
+      const year = parseInt(dateRangeFilter.replace('year:', ''));
+      dateFrom = new Date(year, 0, 1);
+      dateTo   = new Date(year, 11, 31, 23, 59, 59);
+    } else {
+      // Legacy: number of days back (e.g. '30', '90')
+      const days = parseInt(dateRangeFilter) || 30;
+      dateFrom = new Date();
+      dateFrom.setDate(dateFrom.getDate() - days);
+    }
+
+    // ── Normalise program filter to match stored data ────────────────────────
+    const programMatches = (clientProgram: string): boolean => {
+      if (programFilter === 'all') return true;
+      const p = (clientProgram || '').toLowerCase();
+      if (programFilter === 'NSP')        return p.includes('nsp');
+      if (programFilter === 'MAT')        return p.includes('mat') || p.includes('methadone');
+      if (programFilter === 'Stimulants') return p.includes('stimulant');
+      return clientProgram === programFilter;
+    };
+
+    const allClients      = await kv.getByPrefix('client:');
+    const allVisits       = await kv.getByPrefix('visit:');
+    const users           = await kv.getByPrefix('user:');
+    const psychosocial    = await kv.getByPrefix('psychosocial:');
     const clinicalResults = await kv.getByPrefix('clinical-result:');
-    
-    // Calculate metrics
+
+    // ── Filter clients ───────────────────────────────────────────────────────
+    const clients = allClients.filter(client => {
+      if (locationFilter !== 'all' && client.location !== locationFilter) return false;
+      if (!programMatches(client.program)) return false;
+      if (searchFilter) {
+        const fullName = `${client.firstName || ''} ${client.lastName || ''}`.toLowerCase();
+        const clientId = (client.clientId || '').toLowerCase();
+        if (!fullName.includes(searchFilter) && !clientId.includes(searchFilter)) return false;
+      }
+      return true;
+    });
+
+    const filteredClientIds = new Set(clients.map(c => c.id));
+
+    // ── Filter visits to date window + filtered clients ──────────────────────
+    const visits = allVisits.filter(visit => {
+      const visitDate = visit.visitDate || visit.createdAt;
+      if (!visitDate) return false;
+      const d = new Date(visitDate);
+      if (d < dateFrom || d > dateTo) return false;
+      if (visit.clientId && !filteredClientIds.has(visit.clientId)) return false;
+      return true;
+    });
+
+    // ── Core counts ──────────────────────────────────────────────────────────
     const totalClients = clients.length;
-    const totalVisits = visits.length;
-    const activeUsers = users.filter(u => u.status === 'Active').length;
-    
-    // Program counts
-    const programCounts = clients.reduce((acc, client) => {
+    const totalVisits  = visits.length;
+    const activeUsers  = users.filter(u => u.status === 'Active').length;
+
+    const programCounts = clients.reduce((acc: Record<string, number>, client) => {
       const prog = client.program || 'Unknown';
       acc[prog] = (acc[prog] || 0) + 1;
       return acc;
     }, {});
-    
-    // Clients by location
-    const locationCounts = clients.reduce((acc, client) => {
+
+    const locationCounts = clients.reduce((acc: Record<string, number>, client) => {
       const loc = client.location || 'Unknown';
       acc[loc] = (acc[loc] || 0) + 1;
       return acc;
     }, {});
-    
-    // Clients by gender
-    const genderCounts = clients.reduce((acc, client) => {
+
+    const genderCounts = clients.reduce((acc: Record<string, number>, client) => {
       const gender = client.gender || 'Unknown';
       acc[gender] = (acc[gender] || 0) + 1;
       return acc;
     }, {});
-    
-    // Clients by age group
-    const ageGroups = clients.reduce((acc, client) => {
+
+    const ageGroups = clients.reduce((acc: Record<string, number>, client) => {
       if (!client.age) return acc;
       const age = parseInt(client.age);
       if (isNaN(age)) return acc;
       let group = 'Unknown';
-      if (age < 18) group = '0-17';
+      if (age < 18)      group = '0-17';
       else if (age < 35) group = '18-34';
       else if (age < 50) group = '35-49';
-      else group = '50+';
+      else               group = '50+';
       acc[group] = (acc[group] || 0) + 1;
       return acc;
     }, {});
-    
-    // Recent activity (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recentClients = clients.filter(c => c.createdAt && new Date(c.createdAt) > thirtyDaysAgo).length;
-    const recentVisits = visits.filter(v => v.createdAt && new Date(v.createdAt) > thirtyDaysAgo).length;
-    
-    // Service Delivery Summary (Last 7 Days)
+
+    // ── Recent clients = registered within the date window ───────────────────
+    const recentClients = clients.filter(c => {
+      if (!c.createdAt) return false;
+      const d = new Date(c.createdAt);
+      return d >= dateFrom && d <= dateTo;
+    }).length;
+
+    // ── Service Delivery Summary (last 7 days within the filtered set) ───────
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-    const isInLast7Days = (dateStr: string) => {
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        return d >= sevenDaysAgo;
+    // Use the later of sevenDaysAgo and dateFrom so it respects the filter
+    const serviceFrom = sevenDaysAgo > dateFrom ? sevenDaysAgo : dateFrom;
+
+    const isInServiceWindow = (dateStr: string) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return d >= serviceFrom && d <= dateTo;
     };
 
-    const clientGenderMap = clients.reduce((acc: any, client: any) => {
-        acc[client.id] = client.gender || 'Not recorded';
-        return acc;
+    const clientGenderMap = clients.reduce((acc: Record<string, string>, client) => {
+      acc[client.id] = client.gender || 'Not recorded';
+      return acc;
     }, {});
-    
+
     const getGender = (clientId: string) => clientGenderMap[clientId] || 'Not recorded';
 
     const serviceSummary: any = {
-        'Psychosocial Sessions': { total: 0, male: 0, female: 0, notRecorded: 0 },
-        'HIV Testing': { total: 0, male: 0, female: 0, notRecorded: 0 },
-        'Harm Reduction Education': { total: 0, male: 0, female: 0, notRecorded: 0 },
+      'Psychosocial Sessions':    { total: 0, male: 0, female: 0, notRecorded: 0 },
+      'HIV Testing':              { total: 0, male: 0, female: 0, notRecorded: 0 },
+      'Harm Reduction Education': { total: 0, male: 0, female: 0, notRecorded: 0 },
     };
-    
+
     const increment = (category: string, genderRaw: string) => {
-        const gender = (genderRaw || '').toLowerCase();
-        serviceSummary[category].total++;
-        if (gender === 'male') serviceSummary[category].male++;
-        else if (gender === 'female') serviceSummary[category].female++;
-        else serviceSummary[category].notRecorded++;
+      const gender = (genderRaw || '').toLowerCase();
+      serviceSummary[category].total++;
+      if (gender === 'male')        serviceSummary[category].male++;
+      else if (gender === 'female') serviceSummary[category].female++;
+      else                          serviceSummary[category].notRecorded++;
     };
 
-    // 1. Psychosocial Sessions
     psychosocial.forEach((record: any) => {
-        if (isInLast7Days(record.createdAt || record.providedAt)) {
-            increment('Psychosocial Sessions', getGender(record.clientId));
-        }
+      if (!filteredClientIds.has(record.clientId)) return;
+      if (isInServiceWindow(record.createdAt || record.providedAt)) {
+        increment('Psychosocial Sessions', getGender(record.clientId));
+      }
     });
 
-    // 2. HIV Testing
     clinicalResults.forEach((record: any) => {
-        if (record.type === 'lab' && record.hivTest && isInLast7Days(record.createdAt || record.date)) {
-             increment('HIV Testing', getGender(record.clientId));
-        }
+      if (!filteredClientIds.has(record.clientId)) return;
+      if (record.type === 'lab' && record.hivTest && isInServiceWindow(record.createdAt || record.date)) {
+        increment('HIV Testing', getGender(record.clientId));
+      }
     });
 
-    // 3. Harm Reduction Education (from visits)
     visits.forEach((visit: any) => {
-        if (isInLast7Days(visit.createdAt || visit.visitDate) && visit.servicesProvided) {
-            const services = visit.servicesProvided.toLowerCase();
-            if (services.includes('education') || services.includes('prevention') || services.includes('naloxone')) {
-                 increment('Harm Reduction Education', getGender(visit.clientId));
-            }
+      if (isInServiceWindow(visit.createdAt || visit.visitDate) && visit.servicesProvided) {
+        const services = visit.servicesProvided.toLowerCase();
+        if (services.includes('education') || services.includes('prevention') || services.includes('naloxone')) {
+          increment('Harm Reduction Education', getGender(visit.clientId));
         }
+      }
     });
 
     return c.json({
@@ -1317,32 +1432,44 @@ app.get('/metrics', async (c) => {
         totalVisits,
         activeUsers,
         recentClients,
-        recentVisits,
+        recentVisits: visits.length,
         programCounts,
         locationCounts,
         genderCounts,
         ageGroups,
         serviceSummary,
+        appliedFilters: {
+          location: locationFilter,
+          program: programFilter,
+          dateRange: dateRangeFilter,
+          search: searchFilter,
+          resolvedDateFrom: dateFrom.toISOString(),
+          resolvedDateTo: dateTo.toISOString(),
+        },
       }
     });
+
   } catch (error) {
     console.error('Error fetching metrics:', error);
-    return c.json({ success: false, error: String(error) }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
-
 // ==================== AUDIT LOGS ====================
 
 app.get('/audit', async (c) => {
   try {
     const logs = await kv.getByPrefix('audit:');
-    // Sort by timestamp descending
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // Sort by timestamp descending (with safe date handling)
+    logs.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
     
     return c.json({ success: true, logs });
   } catch (error) {
     console.error('Error fetching audit logs:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1357,12 +1484,16 @@ app.get('/audit/:entityType/:entityId', async (c) => {
       log.entityType === entityType && log.entityId === entityId
     );
     
-    entityLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    entityLogs.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
     
     return c.json({ success: true, logs: entityLogs });
   } catch (error) {
     console.error('Error fetching entity audit logs:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1468,7 +1599,7 @@ app.post('/clinical-results', async (c) => {
     return c.json({ success: true, result: resultRecord, flags });
   } catch (error) {
     console.error('Error creating clinical result:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1478,12 +1609,16 @@ app.get('/clinical-results/client/:clientId', async (c) => {
     const clientId = c.req.param('clientId');
     const allResults = await kv.getByPrefix('clinical-result:');
     const clientResults = allResults.filter(r => r.clientId === clientId);
-    clientResults.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    clientResults.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
     
     return c.json({ success: true, results: clientResults });
   } catch (error) {
     console.error('Error fetching clinical results:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1522,7 +1657,7 @@ app.post('/interventions', async (c) => {
     return c.json({ success: true, intervention: interventionRecord });
   } catch (error) {
     console.error('Error creating intervention:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1532,12 +1667,16 @@ app.get('/interventions/client/:clientId', async (c) => {
     const clientId = c.req.param('clientId');
     const allInterventions = await kv.getByPrefix('intervention:');
     const clientInterventions = allInterventions.filter(i => i.clientId === clientId);
-    clientInterventions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    clientInterventions.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
     
     return c.json({ success: true, interventions: clientInterventions });
   } catch (error) {
     console.error('Error fetching interventions:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1562,12 +1701,16 @@ app.get('/timeline/:clientId', async (c) => {
       ...audits.map(a => ({ ...a, type: 'audit', timestamp: a.timestamp })),
     ];
     
-    timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    timeline.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
     
     return c.json({ success: true, timeline });
   } catch (error) {
     console.error('Error fetching timeline:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1686,7 +1829,7 @@ app.get('/reports/program', async (c) => {
     return c.json({ success: true, records: filteredProgramRecords });
   } catch (error) {
     console.error('Error fetching program report:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1725,7 +1868,7 @@ app.post('/paralegal-cases', async (c) => {
     return c.json({ success: true, case: caseRecord });
   } catch (error) {
     console.error('Error creating paralegal case:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1746,12 +1889,16 @@ app.get('/paralegal-cases', async (c) => {
     }
     
     // Sort by incident date (newest first)
-    cases.sort((a, b) => new Date(b.incidentDate).getTime() - new Date(a.incidentDate).getTime());
+    cases.sort((a, b) => {
+      const timeA = a.incidentDate ? new Date(a.incidentDate).getTime() : 0;
+      const timeB = b.incidentDate ? new Date(b.incidentDate).getTime() : 0;
+      return timeB - timeA;
+    });
     
     return c.json({ success: true, cases });
   } catch (error) {
     console.error('Error fetching paralegal cases:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1786,7 +1933,7 @@ app.put('/paralegal-cases/:id', async (c) => {
     return c.json({ success: true, case: updatedCase });
   } catch (error) {
     console.error('Error updating paralegal case:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1811,18 +1958,22 @@ app.post('/legal-literacy', async (c) => {
     return c.json({ success: true, record: activityRecord });
   } catch (error) {
     console.error('Error creating legal literacy activity:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
 app.get('/legal-literacy', async (c) => {
   try {
     const activities = await kv.getByPrefix('legal-literacy:');
-    activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    activities.sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, activities });
   } catch (error) {
     console.error('Error fetching legal literacy activities:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1881,7 +2032,7 @@ app.post('/hiv-profiles', async (c) => {
     return c.json({ success: true, profile: profileRecord });
   } catch (error) {
     console.error('Error creating HIV profile:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1894,11 +2045,15 @@ app.get('/hiv-profiles', async (c) => {
       profiles = profiles.filter(p => p.clientId === clientId);
     }
     
-    profiles.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    profiles.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, profiles });
   } catch (error) {
     console.error('Error fetching HIV profiles:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1933,7 +2088,7 @@ app.put('/hiv-profiles/:id', async (c) => {
     return c.json({ success: true, profile: updated });
   } catch (error) {
     console.error('Error updating HIV profile:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1966,7 +2121,7 @@ app.post('/art-records', async (c) => {
     return c.json({ success: true, record: artRecord });
   } catch (error) {
     console.error('Error creating ART record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -1975,11 +2130,17 @@ app.get('/art-records', async (c) => {
     const clientId = c.req.query('clientId');
     let records = await kv.getByPrefix('art-record:');
     if (clientId) records = records.filter(r => r.clientId === clientId);
-    records.sort((a, b) => new Date(b.initiationDate || b.createdAt).getTime() - new Date(a.initiationDate || a.createdAt).getTime());
+    records.sort((a, b) => {
+      const dateA = a.initiationDate || a.createdAt;
+      const dateB = b.initiationDate || b.createdAt;
+      const timeA = dateA ? new Date(dateA).getTime() : 0;
+      const timeB = dateB ? new Date(dateB).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching ART records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2001,7 +2162,7 @@ app.put('/art-records/:id', async (c) => {
     return c.json({ success: true, record: updated });
   } catch (error) {
     console.error('Error updating ART record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2034,7 +2195,7 @@ app.post('/viral-load', async (c) => {
     return c.json({ success: true, record: vlRecord });
   } catch (error) {
     console.error('Error creating viral load record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2043,11 +2204,17 @@ app.get('/viral-load', async (c) => {
     const clientId = c.req.query('clientId');
     let records = await kv.getByPrefix('viral-load:');
     if (clientId) records = records.filter(r => r.clientId === clientId);
-    records.sort((a, b) => new Date(b.sampleDate || b.createdAt).getTime() - new Date(a.sampleDate || a.createdAt).getTime());
+    records.sort((a, b) => {
+      const dateA = a.sampleDate || a.createdAt;
+      const dateB = b.sampleDate || b.createdAt;
+      const timeA = dateA ? new Date(dateA).getTime() : 0;
+      const timeB = dateB ? new Date(dateB).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching viral load records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2066,7 +2233,7 @@ app.post('/hiv-clinical-visits', async (c) => {
     return c.json({ success: true, record: visitRecord });
   } catch (error) {
     console.error('Error creating HIV clinical visit:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2075,11 +2242,17 @@ app.get('/hiv-clinical-visits', async (c) => {
     const clientId = c.req.query('clientId');
     let records = await kv.getByPrefix('hiv-clinical-visit:');
     if (clientId) records = records.filter(r => r.clientId === clientId);
-    records.sort((a, b) => new Date(b.visitDate || b.createdAt).getTime() - new Date(a.visitDate || a.createdAt).getTime());
+    records.sort((a, b) => {
+      const dateA = a.visitDate || a.createdAt;
+      const dateB = b.visitDate || b.createdAt;
+      const timeA = dateA ? new Date(dateA).getTime() : 0;
+      const timeB = dateB ? new Date(dateB).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching HIV clinical visits:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2098,7 +2271,7 @@ app.post('/adherence-tracking', async (c) => {
     return c.json({ success: true, record: adherenceRecord });
   } catch (error) {
     console.error('Error creating adherence record:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2107,11 +2280,15 @@ app.get('/adherence-tracking', async (c) => {
     const clientId = c.req.query('clientId');
     let records = await kv.getByPrefix('adherence-tracking:');
     if (clientId) records = records.filter(r => r.clientId === clientId);
-    records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    records.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, records });
   } catch (error) {
     console.error('Error fetching adherence records:', error);
-    return c.json({ success: false, error: error.message }, 500);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
   }
 });
 
@@ -2434,11 +2611,22 @@ app.get('/reports/comprehensive-metrics', async (c) => {
     const recentMatIds = new Set(matRecords.filter(r => new Date(r.dosingDate || r.createdAt) > thirtyDaysAgo).map(r => r.clientId));
     const missedMatDoses = [...matClientIdsSet].filter(id => !recentMatIds.has(id)).map(id => {
       const cl = clientMap[id];
-      const lastDose = matRecords.filter(r => r.clientId === id).sort((a, b) => new Date(b.dosingDate || b.createdAt).getTime() - new Date(a.dosingDate || a.createdAt).getTime())[0];
+      const lastDose = matRecords.filter(r => r.clientId === id).sort((a, b) => {
+        const dateA = a.dosingDate || a.createdAt;
+        const dateB = b.dosingDate || b.createdAt;
+        const timeA = dateA ? new Date(dateA).getTime() : 0;
+        const timeB = dateB ? new Date(dateB).getTime() : 0;
+        return timeB - timeA;
+      })[0];
       return { clientId: id, clientName: cl ? `${cl.firstName} ${cl.lastName}` : 'Unknown', lastDoseDate: lastDose?.dosingDate || lastDose?.createdAt, clientGender: cl?.gender, clientAge: cl?.age };
     });
     const clientsWithoutId = clients.filter(c => !c.nationalId && !c.idNumber).map(c => ({
-      clientId: c.id, clientName: `${c.firstName} ${c.lastName}`, gender: c.gender, age: c.age, location: c.location || c.county, program: c.program,
+      clientId: c.id, 
+      clientName: c.firstName && c.lastName ? `${c.firstName} ${c.lastName}` : (c.firstName || c.lastName || 'Unknown'), 
+      gender: c.gender, 
+      age: c.age, 
+      location: c.location || c.county, 
+      program: c.program,
     }));
 
     return c.json({
@@ -2540,11 +2728,336 @@ app.post('/reports/audit-log', async (c) => {
 app.get('/reports/audit-log', async (c) => {
   try {
     const logs = await kv.getByPrefix('report-audit:');
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    logs.sort((a, b) => {
+      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
     return c.json({ success: true, logs });
   } catch (error) {
     console.error('Error fetching report audit logs:', error);
     return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// ==================== REFERRALS ====================
+
+// 1. Get ALL referrals (Enhanced with dual-ID and safety enrichment)
+app.get('/referrals', async (c) => {
+  try {
+    const status = c.req.query('status');
+    const priority = c.req.query('priority');
+
+    // Fetch everything at once for efficiency
+    const [referrals, allClients] = await Promise.all([
+      kv.getByPrefix('referral:'),
+      kv.getByPrefix('client:')
+    ]);
+
+    // Map clients by ID for instant lookup
+    const clientMap = allClients.reduce((acc: any, cl: any) => {
+      acc[cl.id] = cl;
+      return acc;
+    }, {});
+
+    // ENRICH: Connect referral records to client data
+    const enriched = referrals.map(ref => {
+      // Check both possible ID fields (Manual uses clientId, Clinical uses client_id)
+      const cid = ref.clientId || ref.client_id;
+      const client = clientMap[cid];
+
+      // Safe client name construction
+      let clientName = 'Client Not Found';
+      if (client) {
+        const firstName = client.firstName || '';
+        const lastName = client.lastName || '';
+        clientName = `${firstName} ${lastName}`.trim() || 'Unnamed Client';
+      } else if (ref.clientName) {
+        clientName = ref.clientName;
+      }
+
+      return {
+        ...ref,
+        // Pull data from database client, or fallback to data saved in referral, or generic placeholder
+        clientName,
+        clientPhone: client?.phone || ref.clientPhone || 'No Phone',
+        clientLocation: client?.location || client?.county || ref.clientLocation || 'No Location',
+        referredFor: ref.service || 'General Referral',
+        clientId: cid // Normalize ID for frontend navigation
+      };
+    });
+
+    let filtered = enriched;
+    if (status && status !== 'all') filtered = filtered.filter(r => r.status === status);
+    if (priority && priority !== 'all') filtered = filtered.filter(r => r.priority === priority);
+
+    filtered.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return c.json({ success: true, referrals: filtered });
+  } catch (error) {
+    console.error('Error fetching referrals:', error);
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
+  }
+});
+
+// 2. Create new referral (Saves a "snapshot" of client details for safety)
+app.post('/referrals', async (c) => {
+  try {
+    const body = await c.req.json();
+    const record = body.record || body;
+    const userId = body.userId || record.createdBy || 'system';
+    const userName = body.userName || 'System';
+
+    const referralId = `referral_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = new Date().toISOString();
+
+    // Clean up temporary variables
+    delete record.userId;
+    delete record.userName;
+    delete record.record;
+
+    const referralRecord = {
+      id: referralId,
+      ...record,
+      status: record.status || 'Pending',
+      followUps: [],
+      auditLog: [{
+        action: 'created_manual',
+        user: userName,
+        timestamp,
+        details: 'Referral manually created',
+        changes: record
+      }],
+      createdAt: timestamp,
+      createdBy: userId,
+      updatedAt: timestamp
+    };
+
+    await kv.set(`referral:${referralId}`, referralRecord);
+    return c.json({ success: true, referral: referralRecord }, 201);
+  } catch (error) {
+    return c.json({ success: false, error: getErrorMessage(error) }, 500);
+  }
+});
+
+// 3. Get single referral (Enriched lookup)
+app.get('/referrals/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const actualKey = id.startsWith('referral:') ? id : `referral:${id}`;
+    
+    const referral = await kv.get(actualKey);
+    if (!referral) return c.json({ success: false, error: 'Referral not found' }, 404);
+
+    const cid = referral.clientId || referral.client_id;
+    const client = await kv.get(`client:${cid}`);
+
+    const enrichedReferral = {
+      ...referral,
+      clientName: client ? `${client.firstName} ${client.lastName}` : (referral.clientName || 'Unknown'),
+      clientPhone: client?.phone || referral.clientPhone || 'N/A',
+      clientLocation: client?.location || client?.county || referral.clientLocation || 'N/A'
+    };
+
+    return c.json({ success: true, referral: enrichedReferral });
+  } catch (error) {
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Update referral (General updates)
+app.put('/referrals/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { updates, userId, userName } = await c.req.json();
+
+    const actualId = id.startsWith('referral:') ? id : `referral:${id}`;
+    const existingReferral = await kv.get(actualId);
+    
+    if (!existingReferral) {
+      return c.json({ success: false, error: 'Referral not found' }, 404);
+    }
+
+    const timestamp = new Date().toISOString();
+    
+    // Calculate changes for internal audit log
+    const changes: any = {};
+    for (const key in updates) {
+      if (existingReferral[key] !== updates[key]) {
+        changes[key] = { from: existingReferral[key], to: updates[key] };
+      }
+    }
+
+    const updatedReferral = {
+      ...existingReferral,
+      ...updates,
+      updatedAt: timestamp,
+      auditLog: [
+        ...(existingReferral.auditLog || []),
+        {
+          action: 'updated',
+          user: userName || 'System',
+          timestamp,
+          details: 'Referral details updated',
+          changes
+        }
+      ]
+    };
+
+    await kv.set(actualId, updatedReferral);
+
+    return c.json({ success: true, referral: updatedReferral });
+  } catch (error) {
+    console.error('Error updating referral:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+// DELETE a referral
+app.delete('/referrals/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { userId, userName } = await c.req.json(); // Get who is deleting
+
+    const actualId = id.startsWith('referral:') ? id : `referral:${id}`;
+    const referral = await kv.get(actualId);
+
+    if (!referral) {
+      return c.json({ success: false, error: 'Referral not found' }, 404);
+    }
+
+    // Delete the record
+    await kv.del(actualId);
+
+    // Log to global audit
+    await kv.set(`audit:${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, {
+      action: 'referral_deleted',
+      entityType: 'referral',
+      entityId: id,
+      userId,
+      timestamp: new Date().toISOString(),
+      details: { clientName: referral.clientName, service: referral.service }
+    });
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting referral:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Add Follow-up Action
+app.post('/referrals/:id/follow-up', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { followUp, userId, userName } = await c.req.json();
+
+    const actualId = id.startsWith('referral:') ? id : `referral:${id}`;
+    const existingReferral = await kv.get(actualId);
+    
+    if (!existingReferral) {
+      return c.json({ success: false, error: 'Referral not found' }, 404);
+    }
+
+    const timestamp = new Date().toISOString();
+
+    const newFollowUp = {
+      ...followUp,
+      recordedBy: userName || 'System',
+      timestamp
+    };
+
+    const updatedFollowUps = [...(existingReferral.followUps || []), newFollowUp];
+    
+    // Auto-update status logic
+    let newStatus = existingReferral.status;
+    let statusDetails = '';
+    
+    if (existingReferral.status === 'Pending' && followUp.outcome === 'Successful') {
+      newStatus = 'Contacted';
+      statusDetails = ' (Auto-updated status to Contacted)';
+    }
+
+    const updatedReferral = {
+      ...existingReferral,
+      status: newStatus,
+      followUps: updatedFollowUps,
+      updatedAt: timestamp,
+      auditLog: [
+        ...(existingReferral.auditLog || []),
+        {
+          action: 'follow_up_added',
+          user: userName || 'System',
+          timestamp,
+          details: `Follow-up added: ${followUp.actionType}${statusDetails}`,
+          changes: newFollowUp
+        }
+      ]
+    };
+
+    await kv.set(actualId, updatedReferral);
+
+    return c.json({ success: true, referral: updatedReferral });
+  } catch (error) {
+    console.error('Error adding referral follow-up:', error);
+    return c.json({ success: false, error: error.message }, 500);
+  }
+});
+
+// Link to Care
+app.post('/referrals/:id/link', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { linkageDetails, linkage, userId, userName } = await c.req.json();
+
+    // Accept either linkageDetails or linkage for backwards compatibility
+    const linkageData = linkageDetails || linkage;
+
+    if (!linkageData) {
+      return c.json({ success: false, error: 'Linkage details are required' }, 400);
+    }
+
+    const actualId = id.startsWith('referral:') ? id : `referral:${id}`;
+    const existingReferral = await kv.get(actualId);
+    
+    if (!existingReferral) {
+      return c.json({ success: false, error: 'Referral not found' }, 404);
+    }
+
+    const timestamp = new Date().toISOString();
+
+    const completeLinkageData = {
+      ...linkageData,
+      recordedBy: userName || userId || 'System',
+      timestamp
+    };
+
+    const updatedReferral = {
+      ...existingReferral,
+      status: 'Linked to Care',
+      linkage: completeLinkageData,
+      updatedAt: timestamp,
+      auditLog: [
+        ...(existingReferral.auditLog || []),
+        {
+          action: 'linked_to_care',
+          user: userName || userId || 'System',
+          timestamp,
+          details: `Client linked to care at ${linkageData.facility || 'facility'}`,
+          changes: completeLinkageData
+        }
+      ]
+    };
+
+    await kv.set(actualId, updatedReferral);
+
+    return c.json({ success: true, referral: updatedReferral });
+  } catch (error) {
+    console.error('Error linking referral:', error);
+    return c.json({ success: false, error: error.message }, 500);
   }
 });
 
